@@ -1,0 +1,35 @@
+# macOS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Local runtime data
+*.db
+*.sqlite
+*.sqlite3
+latest_reply.txt
+*.log
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Build / temporary output
+dist/
+build/
+tmp/
+temp/

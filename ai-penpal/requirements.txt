@@ -1,0 +1,24 @@
+# Runtime dependencies
+aiosmtpd
+flask
+flask-cors
+grpcio
+ollama
+anthropic
+google-auth
+requests
+
+# Attachment extraction
+pypdf
+python-docx
+Pillow
+pytesseract
+beautifulsoup4
+
+# Local test runner
+pytest
+
+# pytesseract only installs the Python wrapper.
+# Install the Tesseract OCR binary separately on the machine:
+# macOS:  brew install tesseract
+# Ubuntu: sudo apt install tesseract-ocr

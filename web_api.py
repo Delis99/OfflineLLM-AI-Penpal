@@ -66,6 +66,8 @@ DEFAULT_DB_PATH = (
 DB_PATH = os.environ.get("AI_PENPAL_DB_PATH", DEFAULT_DB_PATH)
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 MIN_PASSWORD_LENGTH = 8
+MAX_DISPLAY_NAME_LENGTH = 80
+MAX_PROFILE_PICTURE_CHARS = 300_000
 VERIFICATION_CODE_TTL_MINUTES = 10
 MAX_VERIFICATION_ATTEMPTS = 5
 SMTP_REPLY_HOST = os.getenv("SMTP_REPLY_HOST", "localhost")
@@ -121,6 +123,8 @@ def _create_email_verifications_table(conn):
             email TEXT PRIMARY KEY,
             password_hash TEXT NOT NULL,
             code_hash TEXT NOT NULL,
+            name TEXT NOT NULL DEFAULT '',
+            picture TEXT NOT NULL DEFAULT '',
             attempts INTEGER NOT NULL DEFAULT 0,
             expires_at TEXT NOT NULL,
             created_at TEXT NOT NULL,
@@ -173,6 +177,12 @@ def _ensure_users_table(conn):
 
 def _ensure_email_verifications_table(conn):
     _create_email_verifications_table(conn)
+    columns = conn.execute("PRAGMA table_info(email_verifications)").fetchall()
+    column_names = {column["name"] for column in columns}
+    if "name" not in column_names:
+        conn.execute("ALTER TABLE email_verifications ADD COLUMN name TEXT NOT NULL DEFAULT ''")
+    if "picture" not in column_names:
+        conn.execute("ALTER TABLE email_verifications ADD COLUMN picture TEXT NOT NULL DEFAULT ''")
 
 
 def init_db():
@@ -191,13 +201,38 @@ def validate_email(email):
     return bool(EMAIL_RE.match(email))
 
 
+def sanitize_display_name(name, email):
+    cleaned = re.sub(r"\s+", " ", (name or "").strip())
+    return cleaned[:MAX_DISPLAY_NAME_LENGTH] or email.split("@", 1)[0]
+
+
+def sanitize_profile_picture(picture):
+    picture = (picture or "").strip()
+    if not picture:
+        return ""
+    if len(picture) > MAX_PROFILE_PICTURE_CHARS:
+        raise ValueError("Profile picture is too large.")
+    if picture.startswith("https://"):
+        return picture
+    if picture.startswith("data:image/") and ";base64," in picture:
+        header, data = picture.split(",", 1)
+        allowed_headers = {
+            "data:image/gif;base64",
+            "data:image/jpeg;base64",
+            "data:image/jpg;base64",
+            "data:image/png;base64",
+            "data:image/webp;base64",
+        }
+        if header.lower() in allowed_headers and re.fullmatch(r"[A-Za-z0-9+/=]+", data):
+            return picture
+    raise ValueError("Profile picture must be an image.")
+
+
 def session_payload(user):
     return {
         "id": user["id"],
         "email": user["email"],
         "name": user["name"],
-        "picture": user["picture"],
-        "google_sub": user["google_sub"],
     }
 
 
@@ -205,6 +240,25 @@ def start_user_session(user):
     session.clear()
     session.permanent = True
     session["user"] = session_payload(user)
+
+
+def user_from_session():
+    user = current_user()
+    if not user:
+        return None
+
+    user_id = user.get("id")
+    email = normalize_email(user.get("email", ""))
+    conn = get_db()
+    try:
+        row = None
+        if user_id:
+            row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        if row is None and email:
+            row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        return row
+    finally:
+        conn.close()
 
 
 def serialize_user(row):
@@ -281,14 +335,24 @@ def upsert_user(profile):
         ).fetchone()
 
         if row:
-            conn.execute(
-                """
-                UPDATE users
-                SET email = ?, name = ?, picture = ?, last_login_at = ?
-                WHERE id = ?
-                """,
-                (profile["email"], profile["name"], profile["picture"], now, row["id"]),
-            )
+            if row["password_hash"]:
+                conn.execute(
+                    """
+                    UPDATE users
+                    SET google_sub = ?, last_login_at = ?
+                    WHERE id = ?
+                    """,
+                    (profile["google_sub"], now, row["id"]),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE users
+                    SET email = ?, name = ?, picture = ?, last_login_at = ?
+                    WHERE id = ?
+                    """,
+                    (profile["email"], profile["name"], profile["picture"], now, row["id"]),
+                )
         else:
             email_row = conn.execute(
                 "SELECT * FROM users WHERE email = ?",
@@ -296,6 +360,21 @@ def upsert_user(profile):
             ).fetchone()
             if email_row and email_row["google_sub"] != profile["google_sub"]:
                 if not email_row["google_sub"]:
+                    if email_row["password_hash"]:
+                        conn.execute(
+                            """
+                            UPDATE users
+                            SET google_sub = ?, last_login_at = ?
+                            WHERE id = ?
+                            """,
+                            (profile["google_sub"], now, email_row["id"]),
+                        )
+                        conn.commit()
+                        user = conn.execute(
+                            "SELECT * FROM users WHERE id = ?",
+                            (email_row["id"],),
+                        ).fetchone()
+                        return user
                     conn.execute(
                         """
                         UPDATE users
@@ -359,10 +438,11 @@ def upsert_user(profile):
         conn.close()
 
 
-def create_password_user_with_hash(email, password_hash):
+def create_password_user_with_hash(email, password_hash, name="", picture=""):
     init_db()
     now = _utc_now_isoformat()
-    name = email.split("@", 1)[0]
+    display_name = sanitize_display_name(name, email)
+    profile_picture = sanitize_profile_picture(picture)
     conn = get_db()
     try:
         existing = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
@@ -378,8 +458,8 @@ def create_password_user_with_hash(email, password_hash):
             """,
             (
                 email,
-                name,
-                "",
+                display_name,
+                profile_picture,
                 None,
                 password_hash,
                 now,
@@ -441,13 +521,15 @@ def send_verification_email(email, code):
         smtp.sendmail(SMTP_FROM_EMAIL, [email], msg.as_string())
 
 
-def request_signup_verification(email, password):
+def request_signup_verification(email, password, name="", picture=""):
     init_db()
     code = generate_verification_code()
     now = datetime.utcnow()
     expires_at = now + timedelta(minutes=VERIFICATION_CODE_TTL_MINUTES)
     password_hash = generate_password_hash(password)
     code_hash = generate_password_hash(code)
+    display_name = sanitize_display_name(name, email)
+    profile_picture = sanitize_profile_picture(picture)
 
     conn = get_db()
     try:
@@ -460,12 +542,14 @@ def request_signup_verification(email, password):
         conn.execute(
             """
             INSERT INTO email_verifications (
-                email, password_hash, code_hash, attempts, expires_at, created_at, updated_at
+                email, password_hash, code_hash, name, picture, attempts, expires_at, created_at, updated_at
             )
-            VALUES (?, ?, ?, 0, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
             ON CONFLICT(email) DO UPDATE SET
                 password_hash = excluded.password_hash,
                 code_hash = excluded.code_hash,
+                name = excluded.name,
+                picture = excluded.picture,
                 attempts = 0,
                 expires_at = excluded.expires_at,
                 updated_at = excluded.updated_at
@@ -474,6 +558,8 @@ def request_signup_verification(email, password):
                 email,
                 password_hash,
                 code_hash,
+                display_name,
+                profile_picture,
                 expires_at.isoformat(),
                 now.isoformat(),
                 now.isoformat(),
@@ -517,12 +603,14 @@ def verify_signup_code(email, code):
             raise ValueError("Incorrect verification code.")
 
         password_hash = row["password_hash"]
+        name = row["name"]
+        picture = row["picture"]
         conn.execute("DELETE FROM email_verifications WHERE email = ?", (email,))
         conn.commit()
     finally:
         conn.close()
 
-    return create_password_user_with_hash(email, password_hash)
+    return create_password_user_with_hash(email, password_hash, name, picture)
 
 
 @app.route("/api/config", methods=["GET"])
@@ -561,6 +649,8 @@ def password_signup():
         email = normalize_email(data.get("email", ""))
         password = data.get("password", "")
         confirm_password = data.get("confirmPassword", "")
+        name = data.get("name", "")
+        picture = data.get("picture", "")
 
         if not validate_email(email):
             return jsonify({"success": False, "error": "Enter a valid email address."}), 400
@@ -574,7 +664,7 @@ def password_signup():
         if password != confirm_password:
             return jsonify({"success": False, "error": "Passwords do not match."}), 400
 
-        request_signup_verification(email, password)
+        request_signup_verification(email, password, name, picture)
 
         logger.info(f"[AUTH] Verification code sent to {email}")
         return jsonify(
@@ -647,6 +737,9 @@ def me():
     user = current_user()
     if not user:
         return jsonify({"success": False, "user": None}), 401
+    row = user_from_session()
+    if row:
+        return jsonify({"success": True, "user": serialize_user(row)})
     return jsonify(
         {
             "success": True,

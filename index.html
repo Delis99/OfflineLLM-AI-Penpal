@@ -48,6 +48,12 @@ body.logged-in .login-screen{display:none}
 .auth-field.hidden{display:none}
 .auth-input{width:100%;height:44px;border:1px solid var(--border2);border-radius:8px;background:var(--surface);padding:0 12px;font-family:'Outfit',sans-serif;font-size:14px;color:var(--text);outline:none;transition:border 0.16s,box-shadow 0.16s}
 .auth-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-light)}
+.auth-picture-row{display:flex;align-items:center;gap:12px}
+.auth-avatar-preview{width:44px;height:44px;border-radius:50%;background:var(--bg);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:14px;font-weight:800;overflow:hidden;flex-shrink:0;text-transform:none;letter-spacing:0}
+.auth-avatar-preview img{width:100%;height:100%;object-fit:cover}
+.auth-file-input{width:100%;font-family:'Outfit',sans-serif;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0}
+.auth-picture-clear{height:34px;border:1px solid var(--border2);border-radius:8px;background:var(--surface);color:var(--text2);font-family:'Outfit',sans-serif;font-size:12px;font-weight:800;cursor:pointer;padding:0 10px}
+.auth-picture-clear:disabled{cursor:not-allowed;opacity:0.55}
 .auth-submit{height:44px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-family:'Outfit',sans-serif;font-size:14px;font-weight:800;cursor:pointer;transition:background 0.16s,transform 0.16s,box-shadow 0.16s;box-shadow:0 10px 24px rgba(45,90,61,0.18)}
 .auth-submit:hover:not(:disabled){background:var(--accent2);transform:translateY(-1px);box-shadow:0 12px 28px rgba(45,90,61,0.24)}
 .auth-submit:disabled{cursor:not-allowed;opacity:0.62;box-shadow:none}
@@ -379,9 +385,21 @@ body.logged-in .login-screen{display:none}
       <button class="auth-tab" id="authSignupTab" type="button" role="tab" aria-selected="false" onclick="setEmailAuthMode('signup')">Create Account</button>
     </div>
     <form class="email-auth-form" id="emailAuthForm" onsubmit="submitEmailAuth(event)">
+      <label class="auth-field hidden" id="authNameField">
+        Name
+        <input class="auth-input" id="authName" type="text" autocomplete="name" maxlength="80" oninput="renderAuthPicturePreview()" />
+      </label>
       <label class="auth-field">
         Email
-        <input class="auth-input" id="authEmail" type="email" autocomplete="email" required />
+        <input class="auth-input" id="authEmail" type="email" autocomplete="email" required oninput="renderAuthPicturePreview()" />
+      </label>
+      <label class="auth-field hidden" id="authPictureField">
+        Profile Picture
+        <span class="auth-picture-row">
+          <span class="auth-avatar-preview" id="authPicturePreview">A</span>
+          <input class="auth-file-input" id="authPicture" type="file" accept="image/*" onchange="handleAuthPictureChange(event)" />
+          <button class="auth-picture-clear" id="authPictureClear" type="button" onclick="clearAuthPicture()">Remove</button>
+        </span>
       </label>
       <label class="auth-field" id="authPasswordField">
         Password
@@ -499,6 +517,7 @@ let googleClientId = '';
 let googleButtonRendered = false;
 let emailAuthMode = 'login';
 let pendingSignupEmail = '';
+let authProfilePictureData = '';
 let attachmentPreviewUrls = new Map();
 const promptTemplates = [
   {
@@ -556,13 +575,84 @@ function setGoogleAuthVisible(visible) {
   if (googleWrap) googleWrap.style.display = visible ? 'flex' : 'none';
 }
 
+function getAuthPreviewInitial() {
+  const name = document.getElementById('authName')?.value.trim();
+  const email = document.getElementById('authEmail')?.value.trim();
+  return (name || email || 'A').charAt(0).toUpperCase();
+}
+
+function renderAuthPicturePreview() {
+  const preview = document.getElementById('authPicturePreview');
+  if (!preview) return;
+  if (authProfilePictureData) {
+    preview.innerHTML = `<img src="${esc(authProfilePictureData)}" alt="">`;
+    return;
+  }
+  preview.textContent = getAuthPreviewInitial();
+}
+
+function clearAuthPicture() {
+  authProfilePictureData = '';
+  const input = document.getElementById('authPicture');
+  if (input) input.value = '';
+  renderAuthPicturePreview();
+}
+
+function resizeAuthPicture(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type.startsWith('image/')) {
+      reject(new Error('not-image'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('read-failed'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('load-failed'));
+      img.onload = () => {
+        const size = 160;
+        const scale = Math.max(size / img.width, size / img.height);
+        const width = Math.round(img.width * scale);
+        const height = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, Math.round((size - width) / 2), Math.round((size - height) / 2), width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.86));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handleAuthPictureChange(event) {
+  const file = event.target.files?.[0];
+  if (!file) {
+    clearAuthPicture();
+    return;
+  }
+  try {
+    authProfilePictureData = await resizeAuthPicture(file);
+    renderAuthPicturePreview();
+  } catch {
+    clearAuthPicture();
+    showLoginStatus('error', 'Choose a valid profile picture.');
+  }
+}
+
 function setEmailAuthMode(mode) {
   emailAuthMode = mode === 'signup' ? 'signup' : 'login';
   pendingSignupEmail = '';
   const isSignup = emailAuthMode === 'signup';
   const loginTab = document.getElementById('authLoginTab');
   const signupTab = document.getElementById('authSignupTab');
+  const nameField = document.getElementById('authNameField');
+  const nameInput = document.getElementById('authName');
   const emailInput = document.getElementById('authEmail');
+  const pictureField = document.getElementById('authPictureField');
+  const pictureInput = document.getElementById('authPicture');
   const passwordField = document.getElementById('authPasswordField');
   const confirmField = document.getElementById('authConfirmField');
   const confirmInput = document.getElementById('authConfirmPassword');
@@ -576,9 +666,20 @@ function setEmailAuthMode(mode) {
   signupTab?.classList.toggle('active', isSignup);
   loginTab?.setAttribute('aria-selected', String(!isSignup));
   signupTab?.setAttribute('aria-selected', String(isSignup));
+  nameField?.classList.toggle('hidden', !isSignup);
+  pictureField?.classList.toggle('hidden', !isSignup);
   passwordField?.classList.remove('hidden');
   confirmField?.classList.toggle('hidden', !isSignup);
   codeField?.classList.add('hidden');
+  if (nameInput) {
+    nameInput.required = isSignup;
+    nameInput.disabled = false;
+    if (!isSignup) nameInput.value = '';
+  }
+  if (pictureInput) {
+    pictureInput.disabled = false;
+    if (!isSignup) clearAuthPicture();
+  }
   if (confirmInput) {
     confirmInput.required = isSignup;
     confirmInput.disabled = false;
@@ -593,12 +694,17 @@ function setEmailAuthMode(mode) {
   if (passwordInput) passwordInput.disabled = false;
   if (passwordInput) passwordInput.autocomplete = isSignup ? 'new-password' : 'current-password';
   if (submit) submit.textContent = isSignup ? 'Create Account' : 'Sign In';
+  renderAuthPicturePreview();
   showLoginStatus('', '');
 }
 
 function setSignupVerification(email) {
   pendingSignupEmail = email;
+  const nameField = document.getElementById('authNameField');
+  const nameInput = document.getElementById('authName');
   const emailInput = document.getElementById('authEmail');
+  const pictureField = document.getElementById('authPictureField');
+  const pictureInput = document.getElementById('authPicture');
   const passwordField = document.getElementById('authPasswordField');
   const confirmField = document.getElementById('authConfirmField');
   const codeField = document.getElementById('authCodeField');
@@ -609,10 +715,17 @@ function setSignupVerification(email) {
   const submit = document.getElementById('emailAuthSubmit');
 
   if (emailInput) emailInput.readOnly = true;
+  nameField?.classList.add('hidden');
+  pictureField?.classList.add('hidden');
   passwordField?.classList.add('hidden');
   confirmField?.classList.add('hidden');
   codeField?.classList.remove('hidden');
   resetButton?.classList.add('show');
+  if (nameInput) {
+    nameInput.disabled = true;
+    nameInput.required = false;
+  }
+  if (pictureInput) pictureInput.disabled = true;
   if (passwordInput) {
     passwordInput.disabled = true;
     passwordInput.value = '';
@@ -633,7 +746,11 @@ function setSignupVerification(email) {
 
 function resetSignupVerification() {
   pendingSignupEmail = '';
+  const nameField = document.getElementById('authNameField');
+  const nameInput = document.getElementById('authName');
   const emailInput = document.getElementById('authEmail');
+  const pictureField = document.getElementById('authPictureField');
+  const pictureInput = document.getElementById('authPicture');
   const passwordField = document.getElementById('authPasswordField');
   const confirmField = document.getElementById('authConfirmField');
   const codeField = document.getElementById('authCodeField');
@@ -644,10 +761,17 @@ function resetSignupVerification() {
   const submit = document.getElementById('emailAuthSubmit');
 
   if (emailInput) emailInput.readOnly = false;
+  nameField?.classList.remove('hidden');
+  pictureField?.classList.remove('hidden');
   passwordField?.classList.remove('hidden');
   confirmField?.classList.remove('hidden');
   codeField?.classList.add('hidden');
   resetButton?.classList.remove('show');
+  if (nameInput) {
+    nameInput.disabled = false;
+    nameInput.required = true;
+  }
+  if (pictureInput) pictureInput.disabled = false;
   if (passwordInput) passwordInput.disabled = false;
   if (confirmInput) {
     confirmInput.disabled = false;
@@ -662,7 +786,7 @@ function resetSignupVerification() {
 }
 
 function setEmailAuthBusy(on) {
-  ['authPassword', 'authConfirmPassword', 'authVerificationCode', 'emailAuthSubmit', 'authLoginTab', 'authSignupTab', 'authResetSignup'].forEach(id => {
+  ['authName', 'authPicture', 'authPictureClear', 'authPassword', 'authConfirmPassword', 'authVerificationCode', 'emailAuthSubmit', 'authLoginTab', 'authSignupTab', 'authResetSignup'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     if (pendingSignupEmail && (id === 'authPassword' || id === 'authConfirmPassword')) {
@@ -677,11 +801,16 @@ function setEmailAuthBusy(on) {
 
 async function submitEmailAuth(event) {
   event.preventDefault();
+  const name = document.getElementById('authName').value.trim();
   const email = document.getElementById('authEmail').value.trim();
   const password = document.getElementById('authPassword').value;
   const confirmPassword = document.getElementById('authConfirmPassword').value;
   const code = document.getElementById('authVerificationCode').value.trim();
 
+  if (emailAuthMode === 'signup' && !pendingSignupEmail && !name) {
+    showLoginStatus('error', 'Enter your name.');
+    return;
+  }
   if (emailAuthMode === 'signup' && !pendingSignupEmail && password !== confirmPassword) {
     showLoginStatus('error', 'Passwords do not match.');
     return;
@@ -702,6 +831,7 @@ async function submitEmailAuth(event) {
       busyText = 'Verifying your email...';
     } else {
       endpoint = '/api/auth/password/signup';
+      payload = { email, password, confirmPassword, name, picture: authProfilePictureData };
       busyText = 'Sending verification code...';
     }
   }
@@ -800,11 +930,14 @@ async function handleGoogleCredential(response) {
 function setAuthenticatedUser(user) {
   currentUser = user;
   pendingSignupEmail = '';
+  authProfilePictureData = '';
   setAuthState('logged-in');
   showLoginStatus('', '');
+  document.getElementById('authName').value = '';
   document.getElementById('authPassword').value = '';
   document.getElementById('authConfirmPassword').value = '';
   document.getElementById('authVerificationCode').value = '';
+  clearAuthPicture();
   document.getElementById('fromEmail').value = user.email;
   document.getElementById('historyEmail').value = user.email;
   renderNavUser();
@@ -823,6 +956,7 @@ function renderNavUser() {
 function showLoggedOut(message = '') {
   currentUser = null;
   pendingSignupEmail = '';
+  authProfilePictureData = '';
   stopPolling();
   setWaiting(false);
   convos = [];
@@ -832,10 +966,12 @@ function showLoggedOut(message = '') {
   document.getElementById('historyEmail').value = '';
   document.getElementById('subject').value = '';
   document.getElementById('body').value = '';
+  document.getElementById('authName').value = '';
   document.getElementById('authPassword').value = '';
   document.getElementById('authConfirmPassword').value = '';
   document.getElementById('authVerificationCode').value = '';
-  setEmailAuthMode(emailAuthMode);
+  clearAuthPicture();
+  setEmailAuthMode('login');
   resizePromptInput();
   renderSidebar();
   updateChatHeader(null);

@@ -1393,6 +1393,7 @@ class TestWebAPI:
             "send_verification_email",
             lambda email, code: sent.update({"email": email, "code": code}),
         )
+        picture = "data:image/png;base64,aGVsbG8="
 
         signup_response = client.post(
             "/api/auth/password/signup",
@@ -1400,6 +1401,8 @@ class TestWebAPI:
                 "email": "NewUser@Example.com",
                 "password": "TestPass123!",
                 "confirmPassword": "TestPass123!",
+                "name": "New User",
+                "picture": picture,
             },
         )
 
@@ -1426,6 +1429,8 @@ class TestWebAPI:
         assert user is None
         assert pending is not None
         assert pending["attempts"] == 0
+        assert pending["name"] == "New User"
+        assert pending["picture"] == picture
 
         wrong_response = client.post(
             "/api/auth/password/verify",
@@ -1459,10 +1464,19 @@ class TestWebAPI:
         verify_payload = verify_response.get_json()
         assert verify_payload["success"] is True
         assert verify_payload["user"]["email"] == "newuser@example.com"
+        assert verify_payload["user"]["name"] == "New User"
+        assert verify_payload["user"]["picture"] == picture
+
+        with client.session_transaction() as sess:
+            assert sess["user"]["email"] == "newuser@example.com"
+            assert "picture" not in sess["user"]
 
         me_response = client.get("/api/me")
         assert me_response.status_code == 200
-        assert me_response.get_json()["user"]["email"] == "newuser@example.com"
+        me_payload = me_response.get_json()
+        assert me_payload["user"]["email"] == "newuser@example.com"
+        assert me_payload["user"]["name"] == "New User"
+        assert me_payload["user"]["picture"] == picture
 
         conn = web_api.get_db()
         try:
@@ -1474,6 +1488,65 @@ class TestWebAPI:
             conn.close()
 
         assert pending is None
+
+    def test_google_sign_in_links_existing_password_account_by_email(self, monkeypatch, tmp_path):
+        web_api, _ = self._client_with_tmp_db(monkeypatch, tmp_path)
+        user = web_api.create_password_user_with_hash(
+            "linked@example.com",
+            "hashed-password",
+            "Manual Name",
+            "data:image/png;base64,bWFudWFs",
+        )
+
+        linked = web_api.upsert_user(
+            {
+                "email": "linked@example.com",
+                "name": "Google Name",
+                "picture": "https://example.com/google.png",
+                "google_sub": "google-sub-linked",
+            }
+        )
+
+        assert linked["id"] == user["id"]
+        assert linked["email"] == "linked@example.com"
+        assert linked["name"] == "Manual Name"
+        assert linked["picture"] == "data:image/png;base64,bWFudWFs"
+        assert linked["google_sub"] == "google-sub-linked"
+        assert linked["password_hash"] == "hashed-password"
+
+    def test_linked_google_sign_in_preserves_password_account_profile(self, monkeypatch, tmp_path):
+        web_api, _ = self._client_with_tmp_db(monkeypatch, tmp_path)
+        user = web_api.create_password_user_with_hash(
+            "manual@example.com",
+            "hashed-password",
+            "Manual User",
+            "data:image/png;base64,bWFudWFs",
+        )
+
+        conn = web_api.get_db()
+        try:
+            conn.execute(
+                "UPDATE users SET google_sub = ? WHERE id = ?",
+                ("google-sub-manual", user["id"]),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        linked = web_api.upsert_user(
+            {
+                "email": "google-alias@example.com",
+                "name": "Google Alias",
+                "picture": "https://example.com/google.png",
+                "google_sub": "google-sub-manual",
+            }
+        )
+
+        assert linked["id"] == user["id"]
+        assert linked["email"] == "manual@example.com"
+        assert linked["name"] == "Manual User"
+        assert linked["picture"] == "data:image/png;base64,bWFudWFs"
+        assert linked["password_hash"] == "hashed-password"
 
     def test_me_returns_current_user_when_logged_in(self, monkeypatch, tmp_path):
         web_api, client = self._client_with_tmp_db(monkeypatch, tmp_path)

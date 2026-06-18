@@ -39,8 +39,23 @@ body.logged-in .login-screen{display:none}
 .login-logo{width:48px;height:48px;background:var(--accent);border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px}
 .login-logo svg{width:24px;height:24px;stroke:#fff;fill:none;stroke-width:2}
 .login-title{font-family:'Playfair Display',serif;font-size:28px;font-weight:700;color:var(--text);letter-spacing:-0.5px;margin-bottom:8px}
-.login-copy{font-size:14px;line-height:1.7;color:var(--text2);margin-bottom:24px}
-.google-button-wrap{display:flex;justify-content:center;min-height:44px}
+.login-copy{font-size:14px;line-height:1.7;color:var(--text2);margin-bottom:22px}
+.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:4px;margin-bottom:16px}
+.auth-tab{height:36px;border:none;border-radius:6px;background:transparent;color:var(--text2);font-family:'Outfit',sans-serif;font-size:13px;font-weight:700;cursor:pointer;transition:background 0.16s,color 0.16s,box-shadow 0.16s}
+.auth-tab.active{background:var(--surface);color:var(--accent);box-shadow:0 4px 12px rgba(0,0,0,0.06)}
+.email-auth-form{display:flex;flex-direction:column;gap:11px;text-align:left}
+.auth-field{display:flex;flex-direction:column;gap:6px;font-size:11px;font-weight:700;color:var(--text3);letter-spacing:0.6px;text-transform:uppercase}
+.auth-field.hidden{display:none}
+.auth-input{width:100%;height:44px;border:1px solid var(--border2);border-radius:8px;background:var(--surface);padding:0 12px;font-family:'Outfit',sans-serif;font-size:14px;color:var(--text);outline:none;transition:border 0.16s,box-shadow 0.16s}
+.auth-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-light)}
+.auth-submit{height:44px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-family:'Outfit',sans-serif;font-size:14px;font-weight:800;cursor:pointer;transition:background 0.16s,transform 0.16s,box-shadow 0.16s;box-shadow:0 10px 24px rgba(45,90,61,0.18)}
+.auth-submit:hover:not(:disabled){background:var(--accent2);transform:translateY(-1px);box-shadow:0 12px 28px rgba(45,90,61,0.24)}
+.auth-submit:disabled{cursor:not-allowed;opacity:0.62;box-shadow:none}
+.login-divider{display:flex;align-items:center;gap:12px;margin:18px 0 16px;color:var(--text3);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase}
+.login-divider::before,.login-divider::after{content:'';height:1px;background:var(--border);flex:1}
+.google-button-wrap{display:flex;justify-content:center;width:100%;min-height:44px;overflow:hidden}
+#googleSignInButton{display:flex;justify-content:center;width:100%}
+#googleSignInButton>div,#googleSignInButton iframe{display:block;margin:0 auto!important;max-width:100%}
 .login-status{display:none;margin-top:18px;padding:10px 12px;border-radius:8px;font-size:12px;font-weight:500;text-align:left;line-height:1.5}
 .login-status.show{display:block}
 .login-status.loading{background:rgba(196,147,42,0.1);color:var(--gold)}
@@ -356,7 +371,27 @@ body.logged-in .login-screen{display:none}
   <div class="login-panel">
     <div class="login-logo"><svg viewBox="0 0 24 24"><path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg></div>
     <h1 class="login-title">AI Penpal</h1>
-    <p class="login-copy">Sign in with your Google account to send prompts from your verified email and load your own conversations.</p>
+    <p class="login-copy">Sign in with Google or use an email and password to load your own conversations.</p>
+    <div class="auth-tabs" role="tablist" aria-label="Email authentication mode">
+      <button class="auth-tab active" id="authLoginTab" type="button" role="tab" aria-selected="true" onclick="setEmailAuthMode('login')">Sign In</button>
+      <button class="auth-tab" id="authSignupTab" type="button" role="tab" aria-selected="false" onclick="setEmailAuthMode('signup')">Create Account</button>
+    </div>
+    <form class="email-auth-form" id="emailAuthForm" onsubmit="submitEmailAuth(event)">
+      <label class="auth-field">
+        Email
+        <input class="auth-input" id="authEmail" type="email" autocomplete="email" required />
+      </label>
+      <label class="auth-field">
+        Password
+        <input class="auth-input" id="authPassword" type="password" autocomplete="current-password" minlength="8" required />
+      </label>
+      <label class="auth-field hidden" id="authConfirmField">
+        Re-enter Password
+        <input class="auth-input" id="authConfirmPassword" type="password" autocomplete="new-password" minlength="8" />
+      </label>
+      <button class="auth-submit" id="emailAuthSubmit" type="submit">Sign In</button>
+    </form>
+    <div class="login-divider" id="googleDivider"><span>or</span></div>
     <div class="google-button-wrap">
       <div id="googleSignInButton"></div>
     </div>
@@ -455,6 +490,7 @@ let attachedFiles = [];
 let currentUser = null;
 let googleClientId = '';
 let googleButtonRendered = false;
+let emailAuthMode = 'login';
 let attachmentPreviewUrls = new Map();
 const promptTemplates = [
   {
@@ -505,17 +541,94 @@ function showLoginStatus(type, msg) {
   el.textContent = msg;
 }
 
+function setGoogleAuthVisible(visible) {
+  const divider = document.getElementById('googleDivider');
+  const googleWrap = document.querySelector('.google-button-wrap');
+  if (divider) divider.style.display = visible ? 'flex' : 'none';
+  if (googleWrap) googleWrap.style.display = visible ? 'flex' : 'none';
+}
+
+function setEmailAuthMode(mode) {
+  emailAuthMode = mode === 'signup' ? 'signup' : 'login';
+  const isSignup = emailAuthMode === 'signup';
+  const loginTab = document.getElementById('authLoginTab');
+  const signupTab = document.getElementById('authSignupTab');
+  const confirmField = document.getElementById('authConfirmField');
+  const confirmInput = document.getElementById('authConfirmPassword');
+  const passwordInput = document.getElementById('authPassword');
+  const submit = document.getElementById('emailAuthSubmit');
+
+  loginTab?.classList.toggle('active', !isSignup);
+  signupTab?.classList.toggle('active', isSignup);
+  loginTab?.setAttribute('aria-selected', String(!isSignup));
+  signupTab?.setAttribute('aria-selected', String(isSignup));
+  confirmField?.classList.toggle('hidden', !isSignup);
+  if (confirmInput) {
+    confirmInput.required = isSignup;
+    if (!isSignup) confirmInput.value = '';
+  }
+  if (passwordInput) passwordInput.autocomplete = isSignup ? 'new-password' : 'current-password';
+  if (submit) submit.textContent = isSignup ? 'Create Account' : 'Sign In';
+  showLoginStatus('', '');
+}
+
+function setEmailAuthBusy(on) {
+  ['authEmail', 'authPassword', 'authConfirmPassword', 'emailAuthSubmit', 'authLoginTab', 'authSignupTab'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = on;
+  });
+}
+
+async function submitEmailAuth(event) {
+  event.preventDefault();
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const confirmPassword = document.getElementById('authConfirmPassword').value;
+
+  if (emailAuthMode === 'signup' && password !== confirmPassword) {
+    showLoginStatus('error', 'Passwords do not match.');
+    return;
+  }
+
+  const endpoint = emailAuthMode === 'signup'
+    ? '/api/auth/password/signup'
+    : '/api/auth/password/login';
+  const busyText = emailAuthMode === 'signup' ? 'Creating your account...' : 'Signing you in...';
+
+  setEmailAuthBusy(true);
+  showLoginStatus('loading', busyText);
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, confirmPassword })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      showLoginStatus('error', data.error || 'Could not sign in.');
+      return;
+    }
+    setAuthenticatedUser(data.user);
+  } catch {
+    showLoginStatus('error', 'Could not reach the sign-in service.');
+  } finally {
+    setEmailAuthBusy(false);
+  }
+}
+
 async function loadGoogleConfig() {
   try {
     const res = await fetch('/api/config', { credentials: 'same-origin' });
     const data = await res.json();
     if (res.ok && data.success && data.googleClientId) {
       googleClientId = data.googleClientId;
+      setGoogleAuthVisible(true);
       return true;
     }
-    showLoginStatus('error', 'Google Client ID is not configured on the server.');
+    setGoogleAuthVisible(false);
   } catch {
-    showLoginStatus('error', 'Could not load Google sign-in configuration.');
+    setGoogleAuthVisible(false);
   }
   return false;
 }
@@ -527,13 +640,19 @@ function initGoogleSignIn() {
     return;
   }
   if (googleButtonRendered) return;
+  const googleButtonHost = document.getElementById('googleSignInButton');
+  if (!googleButtonHost) return;
+  const googleButtonWidth = Math.max(
+    1,
+    Math.min(300, Math.floor(googleButtonHost.getBoundingClientRect().width || 300))
+  );
   google.accounts.id.initialize({
     client_id: googleClientId,
     callback: handleGoogleCredential
   });
   google.accounts.id.renderButton(
-    document.getElementById('googleSignInButton'),
-    { theme: 'outline', size: 'large', type: 'standard', shape: 'pill', text: 'signin_with', width: 300 }
+    googleButtonHost,
+    { theme: 'outline', size: 'large', type: 'standard', shape: 'pill', text: 'signin_with', width: googleButtonWidth }
   );
   googleButtonRendered = true;
   showLoginStatus('', '');
@@ -567,6 +686,8 @@ function setAuthenticatedUser(user) {
   currentUser = user;
   setAuthState('logged-in');
   showLoginStatus('', '');
+  document.getElementById('authPassword').value = '';
+  document.getElementById('authConfirmPassword').value = '';
   document.getElementById('fromEmail').value = user.email;
   document.getElementById('historyEmail').value = user.email;
   renderNavUser();
@@ -593,20 +714,22 @@ function showLoggedOut(message = '') {
   document.getElementById('historyEmail').value = '';
   document.getElementById('subject').value = '';
   document.getElementById('body').value = '';
+  document.getElementById('authPassword').value = '';
+  document.getElementById('authConfirmPassword').value = '';
   resizePromptInput();
   renderSidebar();
   updateChatHeader(null);
   renderMessages(null);
   document.getElementById('navUser').innerHTML = '';
   setAuthState('logged-out');
-  showLoginStatus(message ? 'error' : 'loading', message || 'Sign in with Google to continue.');
+  showLoginStatus(message ? 'error' : 'loading', message || 'Sign in or create an account to continue.');
   initGoogleSignIn();
 }
 
 async function bootstrapAuth() {
   setAuthState('auth-loading');
   showLoginStatus('loading', 'Checking your session...');
-  const configReady = await loadGoogleConfig();
+  await loadGoogleConfig();
   try {
     const res = await fetch('/api/me', { credentials: 'same-origin' });
     const data = await res.json();
@@ -617,7 +740,7 @@ async function bootstrapAuth() {
   } catch {
     // Fall through to logged-out state.
   }
-  showLoggedOut(configReady ? '' : 'Google Client ID is not configured on the server.');
+  showLoggedOut('');
 }
 
 async function logout() {
@@ -1096,7 +1219,7 @@ function deriveSubject(body) {
 // ── SEND MESSAGE ──────────────────────────────────────────────────────────
 async function sendMessage() {
   if (!currentUser) {
-    showLoggedOut('Please sign in with Google before sending a message.');
+    showLoggedOut('Please sign in before sending a message.');
     return;
   }
   if (isWaitingForReply) {
@@ -1171,10 +1294,10 @@ async function sendMessage() {
     });
     const data = await res.json();
     if (res.status === 401) {
-      showStatus('error', 'Your session expired. Please sign in with Google again.');
+      showStatus('error', 'Your session expired. Please sign in again.');
       setWaiting(false);
       renderMessages(convo, false);
-      showLoggedOut('Your session expired. Please sign in with Google again.');
+      showLoggedOut('Your session expired. Please sign in again.');
       return;
     }
     if (res.ok && data.success) {
@@ -1242,7 +1365,7 @@ async function pollHistory(email) {
       stopPolling();
       setWaiting(false);
       if (convo) renderMessages(convo, false);
-      showLoggedOut('Your session expired. Please sign in with Google again.');
+      showLoggedOut('Your session expired. Please sign in again.');
       return;
     }
     if (!data.success || !data.messages) return;

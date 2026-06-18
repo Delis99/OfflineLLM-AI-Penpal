@@ -10,6 +10,7 @@ import json
 import base64
 import logging
 import os
+import re
 import smtplib
 import sqlite3
 from datetime import datetime, timedelta
@@ -20,6 +21,7 @@ from email import encoders
 from functools import wraps
 from flask import Flask, request, jsonify, session, send_from_directory, abort
 from flask_cors import CORS
+from werkzeug.security import check_password_hash, generate_password_hash
 
 try:
     from google.auth.transport import requests as google_requests
@@ -61,6 +63,12 @@ DEFAULT_DB_PATH = (
     else os.path.join(BASE_DIR, "ai_penpal.db")
 )
 DB_PATH = os.environ.get("AI_PENPAL_DB_PATH", DEFAULT_DB_PATH)
+EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+MIN_PASSWORD_LENGTH = 8
+
+
+def _utc_now_isoformat():
+    return datetime.utcnow().isoformat()
 
 
 def get_db():
@@ -72,8 +80,7 @@ def get_db():
     return conn
 
 
-def init_db():
-    conn = get_db()
+def _create_users_table(conn):
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -81,14 +88,85 @@ def init_db():
             email TEXT NOT NULL UNIQUE,
             name TEXT,
             picture TEXT,
-            google_sub TEXT NOT NULL UNIQUE,
+            google_sub TEXT UNIQUE,
+            password_hash TEXT,
             created_at TEXT NOT NULL,
             last_login_at TEXT NOT NULL
         )
         """
     )
+
+
+def _ensure_users_table(conn):
+    columns = conn.execute("PRAGMA table_info(users)").fetchall()
+    if not columns:
+        _create_users_table(conn)
+        return
+
+    column_names = {column["name"] for column in columns}
+    google_sub_column = next((column for column in columns if column["name"] == "google_sub"), None)
+    google_sub_is_required = bool(google_sub_column and google_sub_column["notnull"])
+    needs_rebuild = google_sub_is_required or "password_hash" not in column_names
+
+    if not needs_rebuild:
+        return
+
+    rows = [dict(row) for row in conn.execute("SELECT * FROM users").fetchall()]
+    conn.execute("ALTER TABLE users RENAME TO users_legacy")
+    _create_users_table(conn)
+
+    for row in rows:
+        conn.execute(
+            """
+            INSERT INTO users (
+                id, email, name, picture, google_sub, password_hash, created_at, last_login_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                row.get("id"),
+                row.get("email"),
+                row.get("name", ""),
+                row.get("picture", ""),
+                row.get("google_sub"),
+                row.get("password_hash"),
+                row.get("created_at") or _utc_now_isoformat(),
+                row.get("last_login_at") or _utc_now_isoformat(),
+            ),
+        )
+
+    conn.execute("DROP TABLE users_legacy")
+
+
+def init_db():
+    conn = get_db()
+    _ensure_users_table(conn)
     conn.commit()
     conn.close()
+
+
+def normalize_email(email):
+    return (email or "").strip().lower()
+
+
+def validate_email(email):
+    return bool(EMAIL_RE.match(email))
+
+
+def session_payload(user):
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "name": user["name"],
+        "picture": user["picture"],
+        "google_sub": user["google_sub"],
+    }
+
+
+def start_user_session(user):
+    session.clear()
+    session.permanent = True
+    session["user"] = session_payload(user)
 
 
 def serialize_user(row):
@@ -156,7 +234,7 @@ def verify_google_credential(credential):
 
 
 def upsert_user(profile):
-    now = datetime.utcnow().isoformat()
+    now = _utc_now_isoformat()
     conn = get_db()
     try:
         row = conn.execute(
@@ -179,6 +257,27 @@ def upsert_user(profile):
                 (profile["email"],),
             ).fetchone()
             if email_row and email_row["google_sub"] != profile["google_sub"]:
+                if not email_row["google_sub"]:
+                    conn.execute(
+                        """
+                        UPDATE users
+                        SET name = ?, picture = ?, google_sub = ?, last_login_at = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            profile["name"],
+                            profile["picture"],
+                            profile["google_sub"],
+                            now,
+                            email_row["id"],
+                        ),
+                    )
+                    conn.commit()
+                    user = conn.execute(
+                        "SELECT * FROM users WHERE id = ?",
+                        (email_row["id"],),
+                    ).fetchone()
+                    return user
                 raise ValueError("This email is already linked to another Google account")
 
             if email_row:
@@ -222,6 +321,58 @@ def upsert_user(profile):
         conn.close()
 
 
+def create_password_user(email, password):
+    init_db()
+    now = _utc_now_isoformat()
+    name = email.split("@", 1)[0]
+    conn = get_db()
+    try:
+        existing = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        if existing:
+            if existing["password_hash"]:
+                raise ValueError("An account already exists for this email. Sign in instead.")
+            raise ValueError("This email already uses Google sign-in.")
+
+        conn.execute(
+            """
+            INSERT INTO users (email, name, picture, google_sub, password_hash, created_at, last_login_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                email,
+                name,
+                "",
+                None,
+                generate_password_hash(password),
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        return conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+    finally:
+        conn.close()
+
+
+def authenticate_password_user(email, password):
+    init_db()
+    conn = get_db()
+    try:
+        user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        if not user or not user["password_hash"]:
+            return None
+        if not check_password_hash(user["password_hash"], password):
+            return None
+        conn.execute(
+            "UPDATE users SET last_login_at = ? WHERE id = ?",
+            (_utc_now_isoformat(), user["id"]),
+        )
+        conn.commit()
+        return conn.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone()
+    finally:
+        conn.close()
+
+
 @app.route("/api/config", methods=["GET"])
 def config():
     return jsonify({"success": True, "googleClientId": GOOGLE_CLIENT_ID})
@@ -239,15 +390,7 @@ def google_auth():
         profile = verify_google_credential(credential)
         user = upsert_user(profile)
 
-        session.clear()
-        session.permanent = True
-        session["user"] = {
-            "id": user["id"],
-            "email": user["email"],
-            "name": user["name"],
-            "picture": user["picture"],
-            "google_sub": user["google_sub"],
-        }
+        start_user_session(user)
 
         logger.info(f"[AUTH] Google login success for {user['email']}")
         return jsonify({"success": True, "user": serialize_user(user)})
@@ -257,6 +400,61 @@ def google_auth():
     except Exception as e:
         logger.warning(f"[AUTH] Google login failed: {e}")
         return jsonify({"success": False, "error": "Google sign-in failed"}), 401
+
+
+@app.route("/api/auth/password/signup", methods=["POST"])
+def password_signup():
+    try:
+        data = request.get_json() or {}
+        email = normalize_email(data.get("email", ""))
+        password = data.get("password", "")
+        confirm_password = data.get("confirmPassword", "")
+
+        if not validate_email(email):
+            return jsonify({"success": False, "error": "Enter a valid email address."}), 400
+        if len(password) < MIN_PASSWORD_LENGTH:
+            return jsonify(
+                {
+                    "success": False,
+                    "error": f"Password must be at least {MIN_PASSWORD_LENGTH} characters.",
+                }
+            ), 400
+        if password != confirm_password:
+            return jsonify({"success": False, "error": "Passwords do not match."}), 400
+
+        user = create_password_user(email, password)
+        start_user_session(user)
+
+        logger.info(f"[AUTH] Password account created for {user['email']}")
+        return jsonify({"success": True, "user": serialize_user(user)})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 409
+    except Exception as e:
+        logger.error(f"[AUTH] Password signup failed: {e}")
+        return jsonify({"success": False, "error": "Could not create account."}), 500
+
+
+@app.route("/api/auth/password/login", methods=["POST"])
+def password_login():
+    try:
+        data = request.get_json() or {}
+        email = normalize_email(data.get("email", ""))
+        password = data.get("password", "")
+
+        if not validate_email(email) or not password:
+            return jsonify({"success": False, "error": "Enter your email and password."}), 400
+
+        user = authenticate_password_user(email, password)
+        if not user:
+            return jsonify({"success": False, "error": "Invalid email or password."}), 401
+
+        start_user_session(user)
+
+        logger.info(f"[AUTH] Password login success for {user['email']}")
+        return jsonify({"success": True, "user": serialize_user(user)})
+    except Exception as e:
+        logger.error(f"[AUTH] Password login failed: {e}")
+        return jsonify({"success": False, "error": "Could not sign in."}), 500
 
 
 @app.route("/api/me", methods=["GET"])

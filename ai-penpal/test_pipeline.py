@@ -1383,6 +1383,98 @@ class TestWebAPI:
         assert "Reply-To: verified@example.com" in captured["raw_message"]
         assert "attacker@example.com" not in captured["raw_message"]
 
+    def test_password_signup_verifies_email_before_creating_user(self, monkeypatch, tmp_path):
+        web_api, client = self._client_with_tmp_db(monkeypatch, tmp_path)
+        sent = {}
+
+        monkeypatch.setattr(web_api, "generate_verification_code", lambda: "123456")
+        monkeypatch.setattr(
+            web_api,
+            "send_verification_email",
+            lambda email, code: sent.update({"email": email, "code": code}),
+        )
+
+        signup_response = client.post(
+            "/api/auth/password/signup",
+            json={
+                "email": "NewUser@Example.com",
+                "password": "TestPass123!",
+                "confirmPassword": "TestPass123!",
+            },
+        )
+
+        assert signup_response.status_code == 200
+        signup_payload = signup_response.get_json()
+        assert signup_payload["success"] is True
+        assert signup_payload["needsVerification"] is True
+        assert signup_payload["email"] == "newuser@example.com"
+        assert sent == {"email": "newuser@example.com", "code": "123456"}
+
+        conn = web_api.get_db()
+        try:
+            user = conn.execute(
+                "SELECT * FROM users WHERE email = ?",
+                ("newuser@example.com",),
+            ).fetchone()
+            pending = conn.execute(
+                "SELECT * FROM email_verifications WHERE email = ?",
+                ("newuser@example.com",),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        assert user is None
+        assert pending is not None
+        assert pending["attempts"] == 0
+
+        wrong_response = client.post(
+            "/api/auth/password/verify",
+            json={"email": "newuser@example.com", "code": "000000"},
+        )
+        assert wrong_response.status_code == 400
+        assert wrong_response.get_json()["error"] == "Incorrect verification code."
+
+        conn = web_api.get_db()
+        try:
+            attempts = conn.execute(
+                "SELECT attempts FROM email_verifications WHERE email = ?",
+                ("newuser@example.com",),
+            ).fetchone()["attempts"]
+            user = conn.execute(
+                "SELECT * FROM users WHERE email = ?",
+                ("newuser@example.com",),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        assert attempts == 1
+        assert user is None
+
+        verify_response = client.post(
+            "/api/auth/password/verify",
+            json={"email": "newuser@example.com", "code": "123456"},
+        )
+
+        assert verify_response.status_code == 200
+        verify_payload = verify_response.get_json()
+        assert verify_payload["success"] is True
+        assert verify_payload["user"]["email"] == "newuser@example.com"
+
+        me_response = client.get("/api/me")
+        assert me_response.status_code == 200
+        assert me_response.get_json()["user"]["email"] == "newuser@example.com"
+
+        conn = web_api.get_db()
+        try:
+            pending = conn.execute(
+                "SELECT * FROM email_verifications WHERE email = ?",
+                ("newuser@example.com",),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        assert pending is None
+
     def test_me_returns_current_user_when_logged_in(self, monkeypatch, tmp_path):
         web_api, client = self._client_with_tmp_db(monkeypatch, tmp_path)
         self._login(client, email="verified@example.com")

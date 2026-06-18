@@ -51,6 +51,8 @@ body.logged-in .login-screen{display:none}
 .auth-submit{height:44px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-family:'Outfit',sans-serif;font-size:14px;font-weight:800;cursor:pointer;transition:background 0.16s,transform 0.16s,box-shadow 0.16s;box-shadow:0 10px 24px rgba(45,90,61,0.18)}
 .auth-submit:hover:not(:disabled){background:var(--accent2);transform:translateY(-1px);box-shadow:0 12px 28px rgba(45,90,61,0.24)}
 .auth-submit:disabled{cursor:not-allowed;opacity:0.62;box-shadow:none}
+.auth-secondary{display:none;height:34px;border:none;background:transparent;color:var(--accent);font-family:'Outfit',sans-serif;font-size:12px;font-weight:800;cursor:pointer}
+.auth-secondary.show{display:block}
 .login-divider{display:flex;align-items:center;gap:12px;margin:18px 0 16px;color:var(--text3);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase}
 .login-divider::before,.login-divider::after{content:'';height:1px;background:var(--border);flex:1}
 .google-button-wrap{display:flex;justify-content:center;width:100%;min-height:44px;overflow:hidden}
@@ -381,7 +383,7 @@ body.logged-in .login-screen{display:none}
         Email
         <input class="auth-input" id="authEmail" type="email" autocomplete="email" required />
       </label>
-      <label class="auth-field">
+      <label class="auth-field" id="authPasswordField">
         Password
         <input class="auth-input" id="authPassword" type="password" autocomplete="current-password" minlength="8" required />
       </label>
@@ -389,7 +391,12 @@ body.logged-in .login-screen{display:none}
         Re-enter Password
         <input class="auth-input" id="authConfirmPassword" type="password" autocomplete="new-password" minlength="8" />
       </label>
+      <label class="auth-field hidden" id="authCodeField">
+        Verification Code
+        <input class="auth-input" id="authVerificationCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" />
+      </label>
       <button class="auth-submit" id="emailAuthSubmit" type="submit">Sign In</button>
+      <button class="auth-secondary" id="authResetSignup" type="button" onclick="resetSignupVerification()">Use a different email</button>
     </form>
     <div class="login-divider" id="googleDivider"><span>or</span></div>
     <div class="google-button-wrap">
@@ -491,6 +498,7 @@ let currentUser = null;
 let googleClientId = '';
 let googleButtonRendered = false;
 let emailAuthMode = 'login';
+let pendingSignupEmail = '';
 let attachmentPreviewUrls = new Map();
 const promptTemplates = [
   {
@@ -550,11 +558,17 @@ function setGoogleAuthVisible(visible) {
 
 function setEmailAuthMode(mode) {
   emailAuthMode = mode === 'signup' ? 'signup' : 'login';
+  pendingSignupEmail = '';
   const isSignup = emailAuthMode === 'signup';
   const loginTab = document.getElementById('authLoginTab');
   const signupTab = document.getElementById('authSignupTab');
+  const emailInput = document.getElementById('authEmail');
+  const passwordField = document.getElementById('authPasswordField');
   const confirmField = document.getElementById('authConfirmField');
   const confirmInput = document.getElementById('authConfirmPassword');
+  const codeField = document.getElementById('authCodeField');
+  const codeInput = document.getElementById('authVerificationCode');
+  const resetButton = document.getElementById('authResetSignup');
   const passwordInput = document.getElementById('authPassword');
   const submit = document.getElementById('emailAuthSubmit');
 
@@ -562,21 +576,103 @@ function setEmailAuthMode(mode) {
   signupTab?.classList.toggle('active', isSignup);
   loginTab?.setAttribute('aria-selected', String(!isSignup));
   signupTab?.setAttribute('aria-selected', String(isSignup));
+  passwordField?.classList.remove('hidden');
   confirmField?.classList.toggle('hidden', !isSignup);
+  codeField?.classList.add('hidden');
   if (confirmInput) {
     confirmInput.required = isSignup;
+    confirmInput.disabled = false;
     if (!isSignup) confirmInput.value = '';
   }
+  if (emailInput) emailInput.readOnly = false;
+  if (codeInput) {
+    codeInput.required = false;
+    codeInput.value = '';
+  }
+  resetButton?.classList.remove('show');
+  if (passwordInput) passwordInput.disabled = false;
   if (passwordInput) passwordInput.autocomplete = isSignup ? 'new-password' : 'current-password';
   if (submit) submit.textContent = isSignup ? 'Create Account' : 'Sign In';
   showLoginStatus('', '');
 }
 
+function setSignupVerification(email) {
+  pendingSignupEmail = email;
+  const emailInput = document.getElementById('authEmail');
+  const passwordField = document.getElementById('authPasswordField');
+  const confirmField = document.getElementById('authConfirmField');
+  const codeField = document.getElementById('authCodeField');
+  const codeInput = document.getElementById('authVerificationCode');
+  const resetButton = document.getElementById('authResetSignup');
+  const passwordInput = document.getElementById('authPassword');
+  const confirmInput = document.getElementById('authConfirmPassword');
+  const submit = document.getElementById('emailAuthSubmit');
+
+  if (emailInput) emailInput.readOnly = true;
+  passwordField?.classList.add('hidden');
+  confirmField?.classList.add('hidden');
+  codeField?.classList.remove('hidden');
+  resetButton?.classList.add('show');
+  if (passwordInput) {
+    passwordInput.disabled = true;
+    passwordInput.value = '';
+  }
+  if (confirmInput) {
+    confirmInput.disabled = true;
+    confirmInput.required = false;
+    confirmInput.value = '';
+  }
+  if (codeInput) {
+    codeInput.required = true;
+    codeInput.value = '';
+    codeInput.focus();
+  }
+  if (submit) submit.textContent = 'Verify Account';
+  showLoginStatus('success', `We sent a 6-digit code to ${email}.`);
+}
+
+function resetSignupVerification() {
+  pendingSignupEmail = '';
+  const emailInput = document.getElementById('authEmail');
+  const passwordField = document.getElementById('authPasswordField');
+  const confirmField = document.getElementById('authConfirmField');
+  const codeField = document.getElementById('authCodeField');
+  const codeInput = document.getElementById('authVerificationCode');
+  const passwordInput = document.getElementById('authPassword');
+  const confirmInput = document.getElementById('authConfirmPassword');
+  const resetButton = document.getElementById('authResetSignup');
+  const submit = document.getElementById('emailAuthSubmit');
+
+  if (emailInput) emailInput.readOnly = false;
+  passwordField?.classList.remove('hidden');
+  confirmField?.classList.remove('hidden');
+  codeField?.classList.add('hidden');
+  resetButton?.classList.remove('show');
+  if (passwordInput) passwordInput.disabled = false;
+  if (confirmInput) {
+    confirmInput.disabled = false;
+    confirmInput.required = true;
+  }
+  if (codeInput) {
+    codeInput.required = false;
+    codeInput.value = '';
+  }
+  if (submit) submit.textContent = 'Create Account';
+  showLoginStatus('', '');
+}
+
 function setEmailAuthBusy(on) {
-  ['authEmail', 'authPassword', 'authConfirmPassword', 'emailAuthSubmit', 'authLoginTab', 'authSignupTab'].forEach(id => {
+  ['authPassword', 'authConfirmPassword', 'authVerificationCode', 'emailAuthSubmit', 'authLoginTab', 'authSignupTab', 'authResetSignup'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.disabled = on;
+    if (!el) return;
+    if (pendingSignupEmail && (id === 'authPassword' || id === 'authConfirmPassword')) {
+      el.disabled = true;
+      return;
+    }
+    el.disabled = on;
   });
+  const emailInput = document.getElementById('authEmail');
+  if (emailInput) emailInput.disabled = on && !pendingSignupEmail;
 }
 
 async function submitEmailAuth(event) {
@@ -584,16 +680,31 @@ async function submitEmailAuth(event) {
   const email = document.getElementById('authEmail').value.trim();
   const password = document.getElementById('authPassword').value;
   const confirmPassword = document.getElementById('authConfirmPassword').value;
+  const code = document.getElementById('authVerificationCode').value.trim();
 
-  if (emailAuthMode === 'signup' && password !== confirmPassword) {
+  if (emailAuthMode === 'signup' && !pendingSignupEmail && password !== confirmPassword) {
     showLoginStatus('error', 'Passwords do not match.');
     return;
   }
 
-  const endpoint = emailAuthMode === 'signup'
-    ? '/api/auth/password/signup'
-    : '/api/auth/password/login';
-  const busyText = emailAuthMode === 'signup' ? 'Creating your account...' : 'Signing you in...';
+  let endpoint = '/api/auth/password/login';
+  let payload = { email, password, confirmPassword };
+  let busyText = 'Signing you in...';
+
+  if (emailAuthMode === 'signup') {
+    if (pendingSignupEmail) {
+      if (!/^\d{6}$/.test(code)) {
+        showLoginStatus('error', 'Enter the 6-digit verification code.');
+        return;
+      }
+      endpoint = '/api/auth/password/verify';
+      payload = { email: pendingSignupEmail, code };
+      busyText = 'Verifying your email...';
+    } else {
+      endpoint = '/api/auth/password/signup';
+      busyText = 'Sending verification code...';
+    }
+  }
 
   setEmailAuthBusy(true);
   showLoginStatus('loading', busyText);
@@ -602,11 +713,15 @@ async function submitEmailAuth(event) {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, confirmPassword })
+      body: JSON.stringify(payload)
     });
     const data = await res.json();
     if (!res.ok || !data.success) {
       showLoginStatus('error', data.error || 'Could not sign in.');
+      return;
+    }
+    if (data.needsVerification) {
+      setSignupVerification(data.email || email);
       return;
     }
     setAuthenticatedUser(data.user);
@@ -684,10 +799,12 @@ async function handleGoogleCredential(response) {
 
 function setAuthenticatedUser(user) {
   currentUser = user;
+  pendingSignupEmail = '';
   setAuthState('logged-in');
   showLoginStatus('', '');
   document.getElementById('authPassword').value = '';
   document.getElementById('authConfirmPassword').value = '';
+  document.getElementById('authVerificationCode').value = '';
   document.getElementById('fromEmail').value = user.email;
   document.getElementById('historyEmail').value = user.email;
   renderNavUser();
@@ -705,6 +822,7 @@ function renderNavUser() {
 
 function showLoggedOut(message = '') {
   currentUser = null;
+  pendingSignupEmail = '';
   stopPolling();
   setWaiting(false);
   convos = [];
@@ -716,6 +834,8 @@ function showLoggedOut(message = '') {
   document.getElementById('body').value = '';
   document.getElementById('authPassword').value = '';
   document.getElementById('authConfirmPassword').value = '';
+  document.getElementById('authVerificationCode').value = '';
+  setEmailAuthMode(emailAuthMode);
   resizePromptInput();
   renderSidebar();
   updateChatHeader(null);

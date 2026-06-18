@@ -44,6 +44,7 @@ SMTP_REPLY_HOST  = os.getenv("SMTP_REPLY_HOST", "localhost")
 SMTP_REPLY_PORT  = int(os.getenv("SMTP_REPLY_PORT", "25"))
 SMTP_REPLY_USER  = os.getenv("SMTP_REPLY_USER", "")
 SMTP_REPLY_PASS  = os.getenv("SMTP_REPLY_PASS", "")
+SMTP_FROM_EMAIL  = os.getenv("SMTP_FROM_EMAIL", "offlinellmaipenpal@gmail.com")
 LOCAL_TEST_MODE  = _env_flag("LOCAL_TEST_MODE", "false")
 DISABLE_OUTBOUND_EMAIL = _env_flag("DISABLE_OUTBOUND_EMAIL", "false") or LOCAL_TEST_MODE
 

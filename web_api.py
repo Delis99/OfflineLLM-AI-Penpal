@@ -11,6 +11,7 @@ import base64
 import logging
 import os
 import re
+import secrets
 import smtplib
 import sqlite3
 from datetime import datetime, timedelta
@@ -45,8 +46,8 @@ app.config.update(
     SESSION_COOKIE_SECURE=os.environ.get("FLASK_COOKIE_SECURE", "false").lower() == "true",
 )
 
-OUR_DOMAIN = "offlinellm.me"
-OUR_EMAIL  = f"ask@{OUR_DOMAIN}"
+OUR_DOMAIN = os.getenv("EMAIL_DOMAIN", "offlinellm.me")
+OUR_EMAIL = os.getenv("OUR_EMAIL", f"ask@{OUR_DOMAIN}")
 
 # Google OAuth 2.0 Web Client ID from Google Cloud Console.
 # Configure authorized JavaScript origins there:
@@ -65,10 +66,26 @@ DEFAULT_DB_PATH = (
 DB_PATH = os.environ.get("AI_PENPAL_DB_PATH", DEFAULT_DB_PATH)
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 MIN_PASSWORD_LENGTH = 8
+VERIFICATION_CODE_TTL_MINUTES = 10
+MAX_VERIFICATION_ATTEMPTS = 5
+SMTP_REPLY_HOST = os.getenv("SMTP_REPLY_HOST", "localhost")
+SMTP_REPLY_PORT = int(os.getenv("SMTP_REPLY_PORT", "25"))
+SMTP_REPLY_USER = os.getenv("SMTP_REPLY_USER", "")
+SMTP_REPLY_PASS = os.getenv("SMTP_REPLY_PASS", "")
+SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "offlinellmaipenpal@gmail.com")
+DISABLE_OUTBOUND_EMAIL = os.getenv("DISABLE_OUTBOUND_EMAIL", "false").lower() in {"1", "true", "yes", "on"}
 
 
 def _utc_now_isoformat():
     return datetime.utcnow().isoformat()
+
+
+def _parse_utc_isoformat(value):
+    return datetime.fromisoformat(value)
+
+
+def generate_verification_code():
+    return f"{secrets.randbelow(1_000_000):06d}"
 
 
 def get_db():
@@ -92,6 +109,22 @@ def _create_users_table(conn):
             password_hash TEXT,
             created_at TEXT NOT NULL,
             last_login_at TEXT NOT NULL
+        )
+        """
+    )
+
+
+def _create_email_verifications_table(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS email_verifications (
+            email TEXT PRIMARY KEY,
+            password_hash TEXT NOT NULL,
+            code_hash TEXT NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
         )
         """
     )
@@ -138,9 +171,14 @@ def _ensure_users_table(conn):
     conn.execute("DROP TABLE users_legacy")
 
 
+def _ensure_email_verifications_table(conn):
+    _create_email_verifications_table(conn)
+
+
 def init_db():
     conn = get_db()
     _ensure_users_table(conn)
+    _ensure_email_verifications_table(conn)
     conn.commit()
     conn.close()
 
@@ -321,7 +359,7 @@ def upsert_user(profile):
         conn.close()
 
 
-def create_password_user(email, password):
+def create_password_user_with_hash(email, password_hash):
     init_db()
     now = _utc_now_isoformat()
     name = email.split("@", 1)[0]
@@ -343,7 +381,7 @@ def create_password_user(email, password):
                 name,
                 "",
                 None,
-                generate_password_hash(password),
+                password_hash,
                 now,
                 now,
             ),
@@ -352,6 +390,10 @@ def create_password_user(email, password):
         return conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
     finally:
         conn.close()
+
+
+def create_password_user(email, password):
+    return create_password_user_with_hash(email, generate_password_hash(password))
 
 
 def authenticate_password_user(email, password):
@@ -371,6 +413,116 @@ def authenticate_password_user(email, password):
         return conn.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone()
     finally:
         conn.close()
+
+
+def _verification_email_body(code):
+    return (
+        "Your AI Penpal verification code is:\n\n"
+        f"{code}\n\n"
+        f"This code expires in {VERIFICATION_CODE_TTL_MINUTES} minutes. "
+        "If you did not request this account, you can ignore this email."
+    )
+
+
+def send_verification_email(email, code):
+    msg = MIMEText(_verification_email_body(code), "plain", "utf-8")
+    msg["From"] = SMTP_FROM_EMAIL
+    msg["To"] = email
+    msg["Subject"] = "Your AI Penpal verification code"
+
+    if DISABLE_OUTBOUND_EMAIL:
+        logger.info(f"[AUTH] Email verification code for {email}: {code}")
+        return
+
+    with smtplib.SMTP(SMTP_REPLY_HOST, SMTP_REPLY_PORT, timeout=15) as smtp:
+        if SMTP_REPLY_USER:
+            smtp.starttls()
+            smtp.login(SMTP_REPLY_USER, SMTP_REPLY_PASS)
+        smtp.sendmail(SMTP_FROM_EMAIL, [email], msg.as_string())
+
+
+def request_signup_verification(email, password):
+    init_db()
+    code = generate_verification_code()
+    now = datetime.utcnow()
+    expires_at = now + timedelta(minutes=VERIFICATION_CODE_TTL_MINUTES)
+    password_hash = generate_password_hash(password)
+    code_hash = generate_password_hash(code)
+
+    conn = get_db()
+    try:
+        existing = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        if existing:
+            if existing["password_hash"]:
+                raise ValueError("An account already exists for this email. Sign in instead.")
+            raise ValueError("This email already uses Google sign-in.")
+
+        conn.execute(
+            """
+            INSERT INTO email_verifications (
+                email, password_hash, code_hash, attempts, expires_at, created_at, updated_at
+            )
+            VALUES (?, ?, ?, 0, ?, ?, ?)
+            ON CONFLICT(email) DO UPDATE SET
+                password_hash = excluded.password_hash,
+                code_hash = excluded.code_hash,
+                attempts = 0,
+                expires_at = excluded.expires_at,
+                updated_at = excluded.updated_at
+            """,
+            (
+                email,
+                password_hash,
+                code_hash,
+                expires_at.isoformat(),
+                now.isoformat(),
+                now.isoformat(),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    send_verification_email(email, code)
+
+
+def verify_signup_code(email, code):
+    init_db()
+    code = (code or "").strip()
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT * FROM email_verifications WHERE email = ?",
+            (email,),
+        ).fetchone()
+        if not row:
+            raise ValueError("No verification code was requested for this email.")
+
+        if row["attempts"] >= MAX_VERIFICATION_ATTEMPTS:
+            conn.execute("DELETE FROM email_verifications WHERE email = ?", (email,))
+            conn.commit()
+            raise ValueError("Too many incorrect codes. Request a new code.")
+
+        if datetime.utcnow() > _parse_utc_isoformat(row["expires_at"]):
+            conn.execute("DELETE FROM email_verifications WHERE email = ?", (email,))
+            conn.commit()
+            raise ValueError("Verification code expired. Request a new code.")
+
+        if not check_password_hash(row["code_hash"], code):
+            conn.execute(
+                "UPDATE email_verifications SET attempts = attempts + 1, updated_at = ? WHERE email = ?",
+                (_utc_now_isoformat(), email),
+            )
+            conn.commit()
+            raise ValueError("Incorrect verification code.")
+
+        password_hash = row["password_hash"]
+        conn.execute("DELETE FROM email_verifications WHERE email = ?", (email,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    return create_password_user_with_hash(email, password_hash)
 
 
 @app.route("/api/config", methods=["GET"])
@@ -422,16 +574,49 @@ def password_signup():
         if password != confirm_password:
             return jsonify({"success": False, "error": "Passwords do not match."}), 400
 
-        user = create_password_user(email, password)
-        start_user_session(user)
+        request_signup_verification(email, password)
 
-        logger.info(f"[AUTH] Password account created for {user['email']}")
-        return jsonify({"success": True, "user": serialize_user(user)})
+        logger.info(f"[AUTH] Verification code sent to {email}")
+        return jsonify(
+            {
+                "success": True,
+                "needsVerification": True,
+                "email": email,
+                "message": "Verification code sent.",
+            }
+        )
     except ValueError as e:
         return jsonify({"success": False, "error": str(e)}), 409
+    except smtplib.SMTPException as e:
+        logger.error(f"[AUTH] Verification email failed for {email}: {e}")
+        return jsonify({"success": False, "error": "Could not send verification email."}), 502
     except Exception as e:
         logger.error(f"[AUTH] Password signup failed: {e}")
         return jsonify({"success": False, "error": "Could not create account."}), 500
+
+
+@app.route("/api/auth/password/verify", methods=["POST"])
+def password_verify():
+    try:
+        data = request.get_json() or {}
+        email = normalize_email(data.get("email", ""))
+        code = data.get("code", "")
+
+        if not validate_email(email):
+            return jsonify({"success": False, "error": "Enter a valid email address."}), 400
+        if not re.fullmatch(r"\d{6}", code.strip()):
+            return jsonify({"success": False, "error": "Enter the 6-digit verification code."}), 400
+
+        user = verify_signup_code(email, code)
+        start_user_session(user)
+
+        logger.info(f"[AUTH] Password account verified for {user['email']}")
+        return jsonify({"success": True, "user": serialize_user(user)})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"[AUTH] Password verification failed: {e}")
+        return jsonify({"success": False, "error": "Could not verify account."}), 500
 
 
 @app.route("/api/auth/password/login", methods=["POST"])

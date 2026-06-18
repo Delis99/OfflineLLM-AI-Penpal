@@ -23,19 +23,27 @@ nav{flex-shrink:0;padding:14px 28px;display:flex;align-items:center;justify-cont
 .nav-btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 18px;font-family:'Outfit',sans-serif;font-size:13px;font-weight:700;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:8px;box-shadow:0 8px 20px rgba(45,90,61,0.18)}
 .nav-btn:hover{background:var(--accent2);transform:translateY(-1px);box-shadow:0 10px 24px rgba(45,90,61,0.24)}
 .nav-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2.5}
+.nav-auth-actions{display:none;align-items:center;gap:8px}
 .nav-user{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);max-width:240px;min-width:0}
 .nav-user img{width:26px;height:26px;border-radius:50%;object-fit:cover;border:1px solid var(--border)}
 .nav-user-text{display:flex;flex-direction:column;min-width:0;line-height:1.2}
 .nav-user-name{font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nav-user-email{font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.guest-avatar{width:26px;height:26px;border-radius:50%;background:var(--accent-light);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;border:1px solid var(--accent-light2)}
 .logout-btn{background:transparent;color:var(--text2);border:1px solid var(--border2);border-radius:8px;padding:8px 13px;font-family:'Outfit',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:all 0.2s}
 .logout-btn:hover{background:rgba(192,57,43,0.06);border-color:rgba(192,57,43,0.25);color:var(--red)}
+body.logged-in #navAuthActions,body.logged-out #logoutButton,body.auth-loading #logoutButton,body.auth-loading #navAuthActions{display:none}
+body.logged-out #navAuthActions{display:flex}
 
 /* AUTH */
-body.auth-loading nav,body.auth-loading .app,body.logged-out nav,body.logged-out .app{display:none}
+body.auth-loading nav,body.auth-loading .app{display:none}
+.login-screen{display:none;position:fixed;inset:0;z-index:520;align-items:center;justify-content:center;padding:32px;background:rgba(248,246,241,0.92);backdrop-filter:blur(14px);overflow:auto}
+body.auth-loading .login-screen,body.auth-open .login-screen{display:flex}
 body.logged-in .login-screen{display:none}
-.login-screen{flex:1;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px;background:linear-gradient(180deg,var(--bg),var(--bg2))}
 .login-panel{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 14px 44px rgba(0,0,0,0.1);padding:34px;text-align:center}
+.auth-close{width:34px;height:34px;border:1px solid var(--border);border-radius:50%;background:var(--surface);color:var(--text2);display:flex;align-items:center;justify-content:center;margin:-14px -14px 8px auto;cursor:pointer;transition:background 0.16s,color 0.16s,border-color 0.16s}
+.auth-close:hover{background:var(--bg);color:var(--text);border-color:var(--border2)}
+.auth-close svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.2}
 .login-logo{width:48px;height:48px;background:var(--accent);border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px}
 .login-logo svg{width:24px;height:24px;stroke:#fff;fill:none;stroke-width:2}
 .login-title{font-family:'Playfair Display',serif;font-size:28px;font-weight:700;color:var(--text);letter-spacing:-0.5px;margin-bottom:8px}
@@ -69,6 +77,29 @@ body.logged-in .login-screen{display:none}
 .login-status.loading{background:rgba(196,147,42,0.1);color:var(--gold)}
 .login-status.error{background:rgba(192,57,43,0.08);color:var(--red)}
 .login-status.success{background:var(--accent-light);color:var(--accent)}
+.auth-guest-continue{margin:14px auto 0}
+
+/* GUEST MODAL */
+.guest-modal{display:none;position:fixed;inset:0;z-index:480;align-items:center;justify-content:center;padding:24px;background:rgba(26,24,20,0.22);backdrop-filter:blur(8px)}
+body.guest-modal-open:not(.auth-open) .guest-modal{display:flex}
+.guest-panel{width:min(520px,100%);background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 26px 70px rgba(26,24,20,0.22);padding:26px;text-align:left}
+.guest-panel-top{display:flex;align-items:flex-start;gap:14px;margin-bottom:18px}
+.guest-icon{width:44px;height:44px;border-radius:10px;background:var(--accent-light);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.guest-icon svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2}
+.guest-title{font-family:'Playfair Display',serif;font-size:28px;line-height:1.05;color:var(--text);font-weight:700;letter-spacing:0}
+.guest-copy{font-size:14px;line-height:1.65;color:var(--text2);margin-top:7px}
+.guest-benefits{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0 20px}
+.guest-benefit{border:1px solid var(--border);border-radius:8px;padding:12px;background:var(--surface2)}
+.guest-benefit-title{font-size:12px;font-weight:800;color:var(--text);margin-bottom:4px}
+.guest-benefit-copy{font-size:12px;line-height:1.45;color:var(--text2)}
+.guest-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.guest-link{height:40px;border:none;background:transparent;color:var(--text2);font-family:'Outfit',sans-serif;font-size:13px;font-weight:800;cursor:pointer;padding:0 8px}
+.guest-link:hover{color:var(--accent)}
+.guest-secondary,.guest-primary{height:40px;border-radius:8px;font-family:'Outfit',sans-serif;font-size:13px;font-weight:800;cursor:pointer;padding:0 14px;transition:background 0.16s,color 0.16s,border-color 0.16s,transform 0.16s}
+.guest-secondary{background:var(--surface);border:1px solid var(--border2);color:var(--text)}
+.guest-secondary:hover{border-color:rgba(45,90,61,0.3);color:var(--accent);background:var(--accent-light)}
+.guest-primary{background:var(--accent);border:1px solid var(--accent);color:#fff;box-shadow:0 10px 22px rgba(45,90,61,0.18)}
+.guest-primary:hover{background:var(--accent2);transform:translateY(-1px)}
 
 /* LAYOUT */
 .app{display:flex;flex:1;overflow:hidden}
@@ -320,6 +351,8 @@ body.logged-in .login-screen{display:none}
 .prompt-shell.drag-over{border-color:var(--accent);box-shadow:0 22px 58px rgba(45,90,61,0.2),0 0 0 4px var(--accent-light)}
 .prompt-shell.waiting{border-color:var(--accent-light2)}
 .prompt-shell.disabled{opacity:0.72}
+.prompt-shell.guest-locked .prompt-add{color:var(--text3);background:rgba(17,24,39,0.04)}
+.prompt-shell.guest-locked .prompt-add:hover:not(:disabled){background:rgba(45,90,61,0.08);color:var(--accent)}
 .prompt-files{display:flex;flex-wrap:wrap;gap:12px;padding:0 8px 10px;align-items:flex-start}
 .prompt-files:empty{display:none}
 .prompt-main{display:flex;align-items:flex-end;gap:10px}
@@ -341,6 +374,16 @@ body.logged-in .login-screen{display:none}
   .nav-tag,.nav-user-text{display:none}
   .nav-right{gap:8px}
   .nav-btn{padding:9px 12px}
+  .nav-auth-actions{gap:6px}
+  .nav-auth-actions .logout-btn,.nav-auth-actions .nav-btn{padding:8px 10px;font-size:12px}
+  .login-screen{padding:18px}
+  .login-panel{padding:24px}
+  .guest-modal{padding:16px;align-items:flex-end}
+  .guest-panel{padding:20px;border-radius:14px}
+  .guest-title{font-size:24px}
+  .guest-benefits{grid-template-columns:1fr}
+  .guest-actions{justify-content:stretch}
+  .guest-link,.guest-secondary,.guest-primary{width:100%;justify-content:center;text-align:center}
   .sidebar{display:none}
   .messages{padding:16px 16px 180px}
   .home-dashboard{padding:0 0 28px;gap:18px}
@@ -377,6 +420,9 @@ body.logged-in .login-screen{display:none}
 
 <div class="login-screen" id="loginScreen">
   <div class="login-panel">
+    <button class="auth-close" type="button" onclick="closeAuth()" aria-label="Continue as guest">
+      <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
     <div class="login-logo"><svg viewBox="0 0 24 24"><path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg></div>
     <h1 class="login-title">AI Penpal</h1>
     <p class="login-copy">Sign in with Google or use an email and password to load your own conversations.</p>
@@ -421,6 +467,34 @@ body.logged-in .login-screen{display:none}
       <div id="googleSignInButton"></div>
     </div>
     <div class="login-status loading show" id="loginStatus">Checking your session...</div>
+    <button class="auth-secondary show auth-guest-continue" type="button" onclick="closeAuth()">Continue as guest</button>
+  </div>
+</div>
+
+<div class="guest-modal" id="guestModal" role="dialog" aria-modal="true" aria-labelledby="guestModalTitle">
+  <div class="guest-panel">
+    <div class="guest-panel-top">
+      <div class="guest-icon"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div>
+      <div>
+        <h2 class="guest-title" id="guestModalTitle">Use AI Penpal as a guest</h2>
+        <p class="guest-copy">You can send text prompts and get answers right away. Sign in or create an account when you want your work saved.</p>
+      </div>
+    </div>
+    <div class="guest-benefits">
+      <div class="guest-benefit">
+        <div class="guest-benefit-title">Guest mode</div>
+        <div class="guest-benefit-copy">Text prompts work now, but the conversation clears when the page refreshes.</div>
+      </div>
+      <div class="guest-benefit">
+        <div class="guest-benefit-title">Account mode</div>
+        <div class="guest-benefit-copy">Save conversation history and upload images, PDFs, documents, or text files.</div>
+      </div>
+    </div>
+    <div class="guest-actions">
+      <button class="guest-link" type="button" onclick="dismissGuestModal()">Continue as guest</button>
+      <button class="guest-secondary" type="button" onclick="openAuth('login')">Sign in</button>
+      <button class="guest-primary" type="button" onclick="openAuth('signup')">Create account</button>
+    </div>
   </div>
 </div>
 
@@ -431,7 +505,11 @@ body.logged-in .login-screen{display:none}
   </a>
   <div class="nav-right">
     <div class="nav-user" id="navUser"></div>
-    <button class="logout-btn" onclick="logout()">Logout</button>
+    <div class="nav-auth-actions" id="navAuthActions">
+      <button class="logout-btn" type="button" onclick="openAuth('login')">Sign In</button>
+      <button class="nav-btn" type="button" onclick="openAuth('signup')">Create Account</button>
+    </div>
+    <button class="logout-btn" id="logoutButton" onclick="logout()">Logout</button>
   </div>
 </nav>
 
@@ -454,7 +532,7 @@ body.logged-in .login-screen{display:none}
       </div>
     </div>
     <div class="sidebar-footer">
-      <button class="sb-clear" onclick="clearAll()">
+      <button class="sb-clear" id="clearHistoryButton" onclick="clearAll()">
         <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
         Clear my history
       </button>
@@ -482,7 +560,7 @@ body.logged-in .login-screen{display:none}
       <div class="prompt-shell" id="fileDropZone" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
         <div class="prompt-files" id="fileChips"></div>
         <div class="prompt-main">
-          <button class="prompt-add" id="attachBtn" onclick="document.getElementById('fileInput').click()" aria-label="Attach pictures or files" title="Attach pictures or files">
+          <button class="prompt-add" id="attachBtn" onclick="openAttachmentPicker()" aria-label="Attach pictures or files" title="Attach pictures or files">
             <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
           <textarea class="prompt-input" id="body" placeholder="Ask anything" rows="1"></textarea>
@@ -518,6 +596,7 @@ let googleButtonRendered = false;
 let emailAuthMode = 'login';
 let pendingSignupEmail = '';
 let authProfilePictureData = '';
+let guestModalDismissed = false;
 let attachmentPreviewUrls = new Map();
 const promptTemplates = [
   {
@@ -554,6 +633,67 @@ const promptTemplates = [
 function setAuthState(state) {
   document.body.classList.remove('auth-loading', 'logged-out', 'logged-in');
   document.body.classList.add(state);
+}
+
+function isGuestMode() {
+  return !currentUser;
+}
+
+function hideGuestModal() {
+  document.body.classList.remove('guest-modal-open');
+}
+
+function showGuestModal(force = false) {
+  if (currentUser || document.body.classList.contains('auth-open')) return;
+  if (force) guestModalDismissed = false;
+  if (guestModalDismissed) return;
+  document.body.classList.add('guest-modal-open');
+}
+
+function dismissGuestModal() {
+  guestModalDismissed = true;
+  hideGuestModal();
+  openCompose();
+}
+
+function openAuth(mode = 'login') {
+  hideGuestModal();
+  document.body.classList.add('auth-open');
+  setEmailAuthMode(mode === 'signup' ? 'signup' : 'login');
+  initGoogleSignIn();
+  requestAnimationFrame(() => document.getElementById('authEmail')?.focus());
+}
+
+function closeAuth() {
+  if (document.body.classList.contains('auth-loading')) return;
+  document.body.classList.remove('auth-open');
+  if (!currentUser) {
+    setAuthState('logged-out');
+    showLoginStatus('', '');
+    syncGuestControls();
+    openCompose();
+  }
+}
+
+function syncGuestControls() {
+  const dropZone = document.getElementById('fileDropZone');
+  const attachBtn = document.getElementById('attachBtn');
+  const clearButton = document.getElementById('clearHistoryButton');
+  const guest = isGuestMode();
+  if (dropZone) {
+    dropZone.classList.toggle('guest-locked', guest);
+    dropZone.setAttribute('data-guest', String(guest));
+  }
+  if (attachBtn) {
+    attachBtn.title = guest
+      ? 'Sign in to upload images and documents'
+      : 'Attach pictures or files';
+    attachBtn.setAttribute(
+      'aria-label',
+      guest ? 'Sign in to upload images and documents' : 'Attach pictures or files'
+    );
+  }
+  if (clearButton) clearButton.style.display = guest ? 'none' : 'flex';
 }
 
 function showLoginStatus(type, msg) {
@@ -931,6 +1071,8 @@ function setAuthenticatedUser(user) {
   currentUser = user;
   pendingSignupEmail = '';
   authProfilePictureData = '';
+  guestModalDismissed = true;
+  document.body.classList.remove('auth-open', 'guest-modal-open');
   setAuthState('logged-in');
   showLoginStatus('', '');
   document.getElementById('authName').value = '';
@@ -941,12 +1083,17 @@ function setAuthenticatedUser(user) {
   document.getElementById('fromEmail').value = user.email;
   document.getElementById('historyEmail').value = user.email;
   renderNavUser();
+  syncGuestControls();
   loadHistory();
 }
 
 function renderNavUser() {
   const el = document.getElementById('navUser');
-  if (!el || !currentUser) return;
+  if (!el) return;
+  if (!currentUser) {
+    el.innerHTML = `<span class="guest-avatar">G</span><div class="nav-user-text"><span class="nav-user-name">Guest mode</span><span class="nav-user-email">Temporary chat only</span></div>`;
+    return;
+  }
   const picture = currentUser.picture
     ? `<img src="${esc(currentUser.picture)}" alt="">`
     : `<span class="msg-avatar user">${getInitials(currentUser.email)}</span>`;
@@ -957,6 +1104,7 @@ function showLoggedOut(message = '') {
   currentUser = null;
   pendingSignupEmail = '';
   authProfilePictureData = '';
+  guestModalDismissed = false;
   stopPolling();
   setWaiting(false);
   convos = [];
@@ -973,16 +1121,25 @@ function showLoggedOut(message = '') {
   clearAuthPicture();
   setEmailAuthMode('login');
   resizePromptInput();
+  setAuthState('logged-out');
   renderSidebar();
   updateChatHeader(null);
   renderMessages(null);
-  document.getElementById('navUser').innerHTML = '';
-  setAuthState('logged-out');
-  showLoginStatus(message ? 'error' : 'loading', message || 'Sign in or create an account to continue.');
+  renderNavUser();
+  syncGuestControls();
+  showLoginStatus(message ? 'error' : '', message || '');
+  if (message) {
+    openAuth('login');
+    showLoginStatus('error', message);
+  } else {
+    document.body.classList.remove('auth-open');
+    showGuestModal();
+  }
   initGoogleSignIn();
 }
 
 async function bootstrapAuth() {
+  document.body.classList.remove('auth-open', 'guest-modal-open');
   setAuthState('auth-loading');
   showLoginStatus('loading', 'Checking your session...');
   await loadGoogleConfig();
@@ -1031,6 +1188,14 @@ function closeCompose() {
 // ── SIDEBAR RENDER ────────────────────────────────────────────────────────
 function renderSidebar() {
   const list = document.getElementById('convoList');
+  if (!currentUser) {
+    list.innerHTML = `
+      <div class="list-empty">
+        <div class="list-empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="18" height="18"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div>
+        <p>Guest chats are not saved. Sign in to keep conversation history.</p>
+      </div>`;
+    return;
+  }
   if (!convos.length) {
     list.innerHTML = `<div class="list-empty"><div class="list-empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="18" height="18"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div><p>No conversations yet. Send your first message!</p></div>`;
     return;
@@ -1082,11 +1247,12 @@ function editTitle(id, event) {
 function updateChatHeader(convo) {
   const h = document.getElementById('chatHeader');
   if (!convo) {
+    const metaLabel = currentUser?.email || 'guest mode';
     h.innerHTML = `
       <div class="chat-title-wrap">
-        <div class="chat-title">OfflineLLM workspace</div>
+        <div class="chat-title">${currentUser ? 'OfflineLLM workspace' : 'Guest workspace'}</div>
         <div class="chat-meta">
-          <span>${esc(currentUser?.email || 'verified account')}</span>
+          <span>${esc(metaLabel)}</span>
           <span class="chat-dot"></span>
           <div class="online-badge">AI Online</div>
         </div>
@@ -1133,8 +1299,12 @@ function editHeaderTitle(id) {
 }
 
 function renderHomeDashboard() {
-  const userEmail = currentUser?.email || 'your verified Google email';
-  const userName = currentUser?.name || 'your workspace';
+  const guest = !currentUser;
+  const userEmail = currentUser?.email || 'guest session';
+  const userName = currentUser?.name || 'Guest';
+  const heroCopy = guest
+    ? 'Send a text prompt and get an answer now. Sign in or create an account to save conversations and upload images, PDFs, documents, or text files.'
+    : `Welcome back, ${esc(userName)}. Compose a message, attach a document, and watch the verified conversation appear here as the backend routes it through Flask, SMTP, SQLite memory, and the LLM service.`;
   const templateCards = promptTemplates.map((t, index) => `
     <button class="template-card" onclick="applyPromptTemplate(${index})">
       <div>
@@ -1152,22 +1322,22 @@ function renderHomeDashboard() {
         <div>
           <div class="home-kicker">SJSU CMPE 195A · OfflineLLM</div>
           <h1 class="home-title">Private AI over an email-first pipeline.</h1>
-          <p class="home-lede">Welcome back, ${esc(userName)}. Compose a message, attach a document, and watch the verified conversation appear here as the backend routes it through Flask, SMTP, SQLite memory, and the LLM service.</p>
+          <p class="home-lede">${heroCopy}</p>
           <div class="home-actions">
             <button class="home-primary" onclick="newConvo()">
               <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
               New message
             </button>
-            <button class="home-secondary" onclick="loadHistory()">
+            <button class="home-secondary" onclick="${guest ? "openAuth('login')" : 'loadHistory()'}">
               <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 109-9"/><path d="M3 3v6h6"/></svg>
-              Sync history
+              ${guest ? 'Sign in to save' : 'Sync history'}
             </button>
           </div>
         </div>
         <div class="home-status-grid">
           <div class="home-status">
             <div class="home-status-top"><span class="home-status-label">Identity</span><span class="home-status-dot"></span></div>
-            <div class="home-status-value">Google verified</div>
+            <div class="home-status-value">${guest ? 'Guest access' : 'Verified account'}</div>
             <div class="home-status-copy">${esc(userEmail)}</div>
           </div>
           <div class="home-status">
@@ -1182,8 +1352,8 @@ function renderHomeDashboard() {
           </div>
           <div class="home-status">
             <div class="home-status-top"><span class="home-status-label">Memory</span><span class="home-status-dot"></span></div>
-            <div class="home-status-value">${convos.length} thread${convos.length===1?'':'s'}</div>
-            <div class="home-status-copy">Conversation state is scoped to your account.</div>
+            <div class="home-status-value">${guest ? 'Not saved' : `${convos.length} thread${convos.length===1?'':'s'}`}</div>
+            <div class="home-status-copy">${guest ? 'Refresh clears guest conversations.' : 'Conversation state is scoped to your account.'}</div>
           </div>
         </div>
       </section>
@@ -1364,8 +1534,19 @@ function newConvo() {
 }
 
 // ── FILE HANDLING ─────────────────────────────────────────────────────────
+function requireAccountForUploads() {
+  showStatus('error', 'Sign in or create an account to upload images and documents.');
+  showGuestModal(true);
+  return false;
+}
+function openAttachmentPicker() {
+  if (!currentUser) return requireAccountForUploads();
+  document.getElementById('fileInput').click();
+  return true;
+}
 function handleDragOver(e) {
   e.preventDefault();
+  if (!currentUser) return;
   if (isWaitingForReply) return;
   document.getElementById('fileDropZone').classList.add('drag-over');
 }
@@ -1375,11 +1556,16 @@ function handleDragLeave(e) {
 function handleDrop(e) {
   e.preventDefault();
   document.getElementById('fileDropZone').classList.remove('drag-over');
+  if (!currentUser) {
+    requireAccountForUploads();
+    return;
+  }
   if (isWaitingForReply) return;
   const files = Array.from(e.dataTransfer.files).filter(isSupportedUpload);
   files.forEach(addFile);
 }
 function handleFileSelect(e) {
+  if (!currentUser) { e.target.value = ''; requireAccountForUploads(); return; }
   if (isWaitingForReply) { e.target.value = ''; return; }
   Array.from(e.target.files).forEach(addFile);
   e.target.value = '';
@@ -1416,6 +1602,7 @@ function fileExtension(file) {
   return match ? match[1].toUpperCase() : 'FILE';
 }
 function addFile(file) {
+  if (!currentUser) return requireAccountForUploads();
   if (isWaitingForReply) return;
   if (!isSupportedUpload(file)) { showStatus('error', `${file.name} is not supported.`); return; }
   if (attachedFiles.find(f => f.name === file.name)) return;
@@ -1474,23 +1661,19 @@ function deriveSubject(body) {
 
 // ── SEND MESSAGE ──────────────────────────────────────────────────────────
 async function sendMessage() {
-  if (!currentUser) {
-    showLoggedOut('Please sign in before sending a message.');
-    return;
-  }
   if (isWaitingForReply) {
     showStatus('loading', 'AI is still thinking. Please wait for the reply.');
     return;
   }
 
-  const from = currentUser.email;
-  document.getElementById('fromEmail').value = from;
+  const guest = !currentUser;
+  const from = guest ? 'guest' : currentUser.email;
+  document.getElementById('fromEmail').value = guest ? '' : from;
   const subject = document.getElementById('subject').value.trim();
   const body = document.getElementById('body').value.trim();
 
-  if (!from) return showStatus('error', 'Please enter your email address.');
-  if (!isEmail(from)) return showStatus('error', 'Please enter a valid email address.');
   if (!body) return showStatus('error', 'Please write your message.');
+  if (guest && attachedFiles.length > 0) return requireAccountForUploads();
 
   const btn = document.getElementById('sendBtn');
   const btnText = document.getElementById('btnText');
@@ -1501,7 +1684,7 @@ async function sendMessage() {
   if (!document.getElementById('sp')) {
     const sp = document.createElement('div'); sp.className='spinner'; sp.id='sp'; btn.appendChild(sp);
   }
-  showStatus('loading', 'Sending to ask@offlinellm.me...');
+  showStatus('loading', guest ? 'AI is thinking...' : 'Sending to ask@offlinellm.me...');
 
   const cleanSubject = subject.replace(/^Re: /i,'') || deriveSubject(body);
   const convoId = activeId || `${from}_${Date.now()}`;
@@ -1509,7 +1692,7 @@ async function sendMessage() {
 
   let convo = convos.find(c => c.id === convoId);
   if (!convo) {
-    convo = { id: convoId, email: from, title: cleanSubject, messages: [], updatedAt: now };
+    convo = { id: convoId, email: guest ? 'Guest mode' : from, title: cleanSubject, messages: [], updatedAt: now };
     convos.unshift(convo);
   }
   convo.messages.push({ role: 'user', content: body, time: now });
@@ -1557,21 +1740,44 @@ async function sendMessage() {
       return;
     }
     if (res.ok && data.success) {
-      showStatus('loading', 'Sent. AI is thinking. Reply will appear here automatically.');
       document.getElementById('body').value = '';
       resizePromptInput();
       document.getElementById('subject').value = `Re: ${cleanSubject}`;
       clearAttachedFiles();
-      startPolling(from);
+      if (data.guest) {
+        convo.messages.push({
+          role: 'ai',
+          content: data.reply || 'I generated a reply, but it came back empty.',
+          time: new Date().toISOString()
+        });
+        convo.updatedAt = new Date().toISOString();
+        setWaiting(false);
+        showStatus('success', 'AI reply received. Sign in to save this conversation.');
+        setTimeout(() => {
+          const status = document.getElementById('statusBar');
+          if (status) status.style.display = 'none';
+        }, 4500);
+        renderSidebar();
+        updateChatHeader(convo);
+        renderMessages(convo, false);
+      } else {
+        showStatus('loading', 'Sent. AI is thinking. Reply will appear here automatically.');
+        startPolling(from);
+      }
     } else {
       showStatus('error', data.error || 'Failed to send. Please try again.');
+      if (data.upgradeRequired) showGuestModal(true);
       isWaitingForAI = false;
       setWaiting(false);
       renderMessages(convo, false);
     }
   } catch {
-    window.location.href = `mailto:ask@offlinellm.me?subject=${encodeURIComponent(cleanSubject)}&body=${encodeURIComponent(body)}`;
-    showStatus('success', 'Opening email client as fallback...');
+    if (!guest) {
+      window.location.href = `mailto:ask@offlinellm.me?subject=${encodeURIComponent(cleanSubject)}&body=${encodeURIComponent(body)}`;
+      showStatus('success', 'Opening email client as fallback...');
+    } else {
+      showStatus('error', 'Could not reach the AI service. Please try again.');
+    }
     isWaitingForAI = false;
     setWaiting(false);
   } finally {
@@ -1675,6 +1881,15 @@ async function pollHistory(email) {
 
 // ── LOAD / SAVE ───────────────────────────────────────────────────────────
 function loadHistory() {
+  if (!currentUser) {
+    convos = [];
+    activeId = null;
+    stopPolling();
+    renderSidebar();
+    updateChatHeader(null);
+    renderMessages(null);
+    return;
+  }
   const email = currentUser?.email || document.getElementById('historyEmail').value.trim();
   if (!email || !isEmail(email)) {
     document.getElementById('historyEmail').style.borderColor = 'var(--red)';
@@ -1694,10 +1909,16 @@ function loadHistory() {
 }
 
 function save2(email) {
+  if (!currentUser) return;
   if (email) localStorage.setItem(`aipenpal_${email}`, JSON.stringify(convos));
 }
 
 function clearAll() {
+  if (!currentUser) {
+    showStatus('error', 'Sign in or create an account to save and clear conversation history.');
+    showGuestModal(true);
+    return;
+  }
   const email = currentUser?.email || document.getElementById('historyEmail').value.trim() || document.getElementById('fromEmail').value.trim();
   if (isWaitingForReply) {
     showStatus('loading', 'AI is still thinking. Please wait for the reply before clearing history.');
@@ -1784,6 +2005,7 @@ function setWaiting(on) {
   } else {
     document.getElementById('sp')?.remove();
   }
+  syncGuestControls();
 }
 
 // Sync email field

@@ -97,7 +97,15 @@ MEMORY_ATTACHMENT_CHAR_LIMIT = 2000
 MAX_SUMMARY_CHARS_FOR_LLM = 2000
 
 
-def process_message(transport_id: str, subject: str, body: str, attachment_results=None) -> dict:
+def process_message(
+    transport_id: str,
+    subject: str,
+    body: str,
+    attachment_results=None,
+    *,
+    save_history: bool = True,
+    queue_reply: bool = True,
+) -> dict:
     logger.info(f"[PROCESSOR] Processing message from {transport_id}")
     llm_call_count = 0
 
@@ -112,20 +120,20 @@ def process_message(transport_id: str, subject: str, body: str, attachment_resul
     session_key = f"{transport_id}::{convo_key}"
 
     if cleaned_body.lower().strip() in RESET_KEYWORDS:
-        clear_history(session_key)
-        clear_history(transport_id)
-        clear_conversation_summary(transport_id, convo_key)
-        reply = _format_reply(
-            "Your conversation history has been cleared. You can start a fresh conversation now.",
-            transport_id
-        )
+        reset_message = "Your conversation history has been cleared. You can start a fresh conversation now."
+        if save_history:
+            clear_history(session_key)
+            clear_history(transport_id)
+            clear_conversation_summary(transport_id, convo_key)
+        reply = _format_reply(reset_message, transport_id) if queue_reply else reset_message
         reply_subject = f"Re: {subject}" if not subject.startswith("Re:") else subject
-        queue_outgoing(transport_id, reply_subject, reply)
+        if queue_reply:
+            queue_outgoing(transport_id, reply_subject, reply)
         return {"success": True, "reply_subject": reply_subject, "reply_body": reply}
 
-    history = get_history(session_key)
+    history = get_history(session_key) if save_history else []
     has_history = len(history) > 0
-    conversation_summary = get_conversation_summary(transport_id, convo_key)
+    conversation_summary = get_conversation_summary(transport_id, convo_key) if save_history else ""
 
     logger.info(
         f"[PROCESSOR] {transport_id} convo='{convo_key}' — "
@@ -161,7 +169,8 @@ def process_message(transport_id: str, subject: str, body: str, attachment_resul
     if has_attachments and readable_attachment_count == 0:
         reply = _format_attachment_unreadable_reply()
         reply_subject = f"Re: {subject}" if not subject.startswith("Re:") else subject
-        queue_outgoing(transport_id, reply_subject, reply)
+        if queue_reply:
+            queue_outgoing(transport_id, reply_subject, reply)
         return {"success": True, "reply_subject": reply_subject, "reply_body": reply}
 
     if _has_vision_math(math_contexts):
@@ -174,33 +183,39 @@ def process_message(transport_id: str, subject: str, body: str, attachment_resul
         if llm_response is None:
             error_reply = _format_error_reply()
             reply_subject = f"Re: {subject}" if not subject.startswith("Re:") else subject
-            queue_outgoing(transport_id, reply_subject, error_reply)
+            if queue_reply:
+                queue_outgoing(transport_id, reply_subject, error_reply)
             return {"success": False, "reply_subject": reply_subject, "reply_body": error_reply, "error": "LLM inference failed"}
 
         llm_response = _apply_math_verification(llm_response, math_contexts)
         llm_response = _apply_resume_expected_graduation_guard(llm_response, resume_context)
 
-    # Save history under the conversation-specific key
-    append_to_history(session_key, "user", stored_user_message)
-    append_to_history(session_key, "assistant", llm_response)
+    if save_history:
+        # Save history under the conversation-specific key
+        append_to_history(session_key, "user", stored_user_message)
+        append_to_history(session_key, "assistant", llm_response)
 
-    # Also save under the plain email key so /api/history still works
-    append_to_history(transport_id, "user", stored_user_message)
-    append_to_history(transport_id, "assistant", llm_response)
+        # Also save under the plain email key so /api/history still works
+        append_to_history(transport_id, "user", stored_user_message)
+        append_to_history(transport_id, "assistant", llm_response)
 
-    update_conversation_summary(
-        transport_id,
-        convo_key,
-        _build_memory_user_message(cleaned_body, attachment_results or []),
-        llm_response,
-    )
+        update_conversation_summary(
+            transport_id,
+            convo_key,
+            _build_memory_user_message(cleaned_body, attachment_results or []),
+            llm_response,
+        )
     logger.info("[PROCESSOR] LLM call count = %s", llm_call_count)
 
-    reply = _format_reply(llm_response, transport_id)
+    reply = _format_reply(llm_response, transport_id) if queue_reply else llm_response
     reply_subject = f"Re: {subject}" if not subject.startswith("Re:") else subject
-    queue_outgoing(transport_id, reply_subject, reply)
+    if queue_reply:
+        queue_outgoing(transport_id, reply_subject, reply)
 
-    logger.info(f"[PROCESSOR] Reply queued for {transport_id}")
+    if queue_reply:
+        logger.info(f"[PROCESSOR] Reply queued for {transport_id}")
+    else:
+        logger.info(f"[PROCESSOR] Reply generated without queue for {transport_id}")
 
     return {"success": True, "reply_subject": reply_subject, "reply_body": reply}
 

@@ -1328,20 +1328,59 @@ class TestWebAPI:
         assert payload["uptime_seconds"] == 12
         assert payload["ollama_status"] == "ok"
 
-    def test_send_rejects_unauthenticated_request(self, monkeypatch, tmp_path):
+    def test_send_allows_guest_text_without_history(self, monkeypatch, tmp_path):
+        web_api, client = self._client_with_tmp_db(monkeypatch, tmp_path)
+        captured = {}
+
+        def fake_process_message(transport_id, subject, body, attachment_results=None, **kwargs):
+            captured.update(
+                {
+                    "transport_id": transport_id,
+                    "subject": subject,
+                    "body": body,
+                    "attachment_results": attachment_results,
+                    **kwargs,
+                }
+            )
+            return {"success": True, "reply_body": "Guest reply"}
+
+        monkeypatch.setattr(web_api, "process_message", fake_process_message)
+
+        response = client.post(
+            "/api/send",
+            json={
+                "subject": "Guest prompt",
+                "body": "Can I ask a question?",
+            },
+        )
+
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert payload["success"] is True
+        assert payload["guest"] is True
+        assert payload["reply"] == "Guest reply"
+        assert captured["transport_id"] == "guest"
+        assert captured["save_history"] is False
+        assert captured["queue_reply"] is False
+        assert captured["attachment_results"] == []
+
+    def test_send_rejects_guest_uploads(self, monkeypatch, tmp_path):
         web_api, client = self._client_with_tmp_db(monkeypatch, tmp_path)
 
         response = client.post(
             "/api/send",
             json={
-                "from": "attacker@example.com",
-                "subject": "Should fail",
-                "body": "This should not send.",
+                "subject": "Guest upload",
+                "body": "Summarize this.",
+                "files": [{"name": "notes.txt", "type": "txt", "data": "hello"}],
             },
         )
 
-        assert response.status_code == 401
-        assert response.get_json()["error"] == "Authentication required"
+        assert response.status_code == 403
+        payload = response.get_json()
+        assert payload["success"] is False
+        assert payload["upgradeRequired"] is True
+        assert "upload images and documents" in payload["error"]
 
     def test_send_uses_session_email_not_frontend_from_email(self, monkeypatch, tmp_path):
         web_api, client = self._client_with_tmp_db(monkeypatch, tmp_path)

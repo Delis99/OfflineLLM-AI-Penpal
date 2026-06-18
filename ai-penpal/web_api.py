@@ -37,6 +37,7 @@ from config import (
     SMTP_REPLY_USER,
 )
 from llm import get_active_model, is_ollama_available
+from processor import process_message
 
 try:
     from google.auth.transport import requests as google_requests
@@ -883,7 +884,6 @@ def logout():
 
 
 @app.route("/api/send", methods=["POST"])
-@require_auth
 def send_message():
     try:
         data = request.get_json()
@@ -897,6 +897,41 @@ def send_message():
 
         if not body:
             return jsonify({"success": False, "error": "Missing required fields"}), 400
+        if not isinstance(files, list):
+            return jsonify({"success": False, "error": "Invalid attachments"}), 400
+
+        if not from_email:
+            if files:
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": "Sign in or create an account to upload images and documents.",
+                        "upgradeRequired": True,
+                    }
+                ), 403
+
+            result = process_message(
+                "guest",
+                subject or "Guest message",
+                body,
+                attachment_results=[],
+                save_history=False,
+                queue_reply=False,
+            )
+            if not result.get("success"):
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": result.get("error") or "Could not generate a reply.",
+                    }
+                ), 500
+            return jsonify(
+                {
+                    "success": True,
+                    "guest": True,
+                    "reply": result.get("reply_body", ""),
+                }
+            )
 
         msg = _build_message(from_email, subject, body, files)
 
